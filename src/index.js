@@ -169,7 +169,9 @@ app.get("/checkout", async (req, res) => {
     cancel_url: `https://washpoint-backend.onrender.com/cancel`,
   });
 
-  return res.redirect(303, session.url);
+res.json({
+  url: session.url
+});
 });
 
 app.get("/success", (req, res) => {
