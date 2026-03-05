@@ -172,8 +172,13 @@ app.get("/checkout", async (req, res) => {
   return res.redirect(303, session.url);
 });
 
-app.get("/success", (req, res) => res.send("✅ Payment successful"));
-app.get("/cancel", (req, res) => res.send("❌ Payment cancelled"));
+app.get("/success", (req, res) => {
+  res.json({ status: "success", message: "Payment successful" });
+});
+
+app.get("/cancel", (req, res) => {
+  res.json({ status: "cancelled", message: "Payment cancelled" });
+});
 
 /**
  * RELEASE FUNDS
