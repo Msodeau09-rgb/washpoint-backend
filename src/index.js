@@ -425,10 +425,6 @@ if (order.completion_code !== Number(code)) {
   }
 );
 
-eq("id", req.user.id);
-
-res.json({ ok: true });
-
 /**
  * ⭐ CANCEL ORDER (ADDED)
  */
