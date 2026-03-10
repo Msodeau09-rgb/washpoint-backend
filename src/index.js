@@ -766,12 +766,6 @@ await supabase
 
       console.log("Auto released order:", order.id);
 
-      const payoutTransfer = await stripe.transfers.create({
-  amount: order.amount_pence,
-  currency: order.currency,
-  destination: seller.data.stripe_account_id
-});
-
     } catch (err) {
       console.log("Auto release failed:", err.message);
     }
