@@ -51,6 +51,14 @@ app.post("/create-connected-account", async (req, res) => {
       }
     });
 
+    await supabase
+  .from("sellers")
+  .insert({
+    email: req.body?.email || "washer@test.com",
+    stripe_account_id: account.id,
+    onboarding_complete: false
+  });
+  
     res.json({ account });
 
   } catch (err) {
