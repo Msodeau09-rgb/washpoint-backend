@@ -619,7 +619,7 @@ if (refund) {
 
     try {
 
-      const transfer = await stripe.transfers.create({
+      const PayoutTransfer = await stripe.transfers.create({
         amount: sellerAmount,
         currency: "gbp",
         destination: seller.stripe_account_id,
@@ -642,7 +642,7 @@ if (refund) {
 
       console.log("Auto released order:", order.id);
 
-      const transfer = await stripe.transfers.create({
+      const payoutTransfer = await stripe.transfers.create({
   amount: order.amount_pence,
   currency: order.currency,
   destination: seller.data.stripe_account_id
