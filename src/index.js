@@ -328,13 +328,22 @@ if (order.status !== "completed")
 app.post("/orders/accept", authenticateUser, checkSeller, async (req, res) => {
   const { orderId } = req.body;
 
-  const { data: order } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("id", orderId)
-    .single();
+const { data: order } = await supabase
+  .from("orders")
+  .select("*")
+  .eq("id", orderId)
+  .single();
 
-  if (!order) return res.status(404).send("Order not found");
+if (!order) return res.status(404).send("Order not found");
+
+// ⬇ ADD THIS BLOCK HERE
+const created = new Date(order.created_at);
+const hoursPassed = (Date.now() - created) / 36e5;
+
+if (hoursPassed > 24) {
+  return res.status(400).send("Order expired and refunded");
+}
+// ⬆ END BLOCK
 
 if (order.status !== "available")
   return res.status(400).send("Order is not available");
