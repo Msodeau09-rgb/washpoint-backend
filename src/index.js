@@ -36,6 +36,27 @@ const PORT = process.env.PORT || 3000;
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+app.post("/create-connected-account", async (req, res) => {
+  try {
+
+    const account = await stripe.accounts.create({
+      type: "express",
+      country: "GB",
+      email: req.body.email,
+      capabilities: {
+        transfers: { requested: true },
+        card_payments: { requested: true },
+      },
+    });
+
+    res.json({ account });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to create connected account" });
+  }
+});
+
 /**
  * ✅ 1) Webhook FIRST (RAW body)
  */
