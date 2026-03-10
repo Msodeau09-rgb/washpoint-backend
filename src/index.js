@@ -233,7 +233,7 @@ app.post("/create-order", authenticateUser, checkCustomer, async (req, res) => {
   const parsed = createOrderSchema.safeParse(req.body);
   if (!parsed.success)
     return res.status(400).json({ error: parsed.error.errors });
-
+console.log("User:", req.user);
   const orderData = parsed.data;
 
   const { data: order, error } = await supabase
@@ -242,8 +242,8 @@ app.post("/create-order", authenticateUser, checkCustomer, async (req, res) => {
       amount_pence: orderData.amount_pence,
       currency: "gbp",
       seller_id: orderData.seller_id || null,
-      buyer_name: orderData.buyer_name || null,
-      buyer_email: orderData.buyer_email || null,
+      buyer_name: req.user.email,
+      buyer_email: req.user.email,
       status: "available",
     })
     .select()
@@ -501,22 +501,6 @@ app.post("/orders/cancel", authenticateUser, async (req, res) => {
 
   res.json({ ok: true });
 
-app.post("/support/message", authenticateUser, async (req, res) => {
-
-  const { message, type } = req.body;
-
-  if (!message) {
-    return res.status(400).send("Message required");
-  }
-
-  const { error } = await supabase
-    .from("support_messages")
-    .insert({
-      user_id: req.user.id,
-      type: type || "support",
-      message
-    });
-
   if (error) {
     console.log("Support message error:", error);
     return res.status(500).send("Failed to send message");
@@ -524,7 +508,12 @@ app.post("/support/message", authenticateUser, async (req, res) => {
 
   res.json({ ok: true });
 
-});
+  if (error) {
+    console.log("Support message error:", error);
+    return res.status(500).send("Failed to send message");
+  }
+
+  res.json({ ok: true });
 
 /**
  * CONNECT ROUTES
