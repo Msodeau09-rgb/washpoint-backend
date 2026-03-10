@@ -26,6 +26,10 @@ function checkAdmin(req, res, next) {
 
 const app = express();
 
+app.get("/health", (req, res) => {
+  res.json({ status: "WashPoint backend running 🚀" });
+});
+
 app.use(cors());
 
 const PORT = process.env.PORT || 3000;
