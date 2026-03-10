@@ -386,7 +386,19 @@ if (order.seller_id !== req.user.id) {
     if (order.status !== "accepted")
       return res.status(400).send("Order must be accepted first");
 
-    if (order.completion_code !== Number(code)) {
+// lock order if too many attempts
+if (order.attempts >= 3) {
+  return res.status(403).send("Order locked due to too many incorrect attempts");
+}
+
+// incorrect completion code
+if (order.completion_code !== Number(code)) {
+
+  await supabase
+    .from("orders")
+    .update({ attempts: order.attempts + 1 })
+    .eq("id", orderId);
+
   return res.status(400).send("Invalid completion code");
 }
 
@@ -395,7 +407,8 @@ if (order.seller_id !== req.user.id) {
       .update({
         status: "completed",
         completed_at: new Date().toISOString(),
-        completion_code: null
+        completion_code: NULL
+        attempts: 0
       })
       .eq("id", orderId);
 
