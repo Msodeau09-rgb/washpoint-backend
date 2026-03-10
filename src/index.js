@@ -43,17 +43,18 @@ app.post("/create-connected-account", async (req, res) => {
       type: "express",
       country: "GB",
       email: req.body.email,
+      business_type: "individual",
       capabilities: {
         transfers: { requested: true },
-        card_payments: { requested: true },
-      },
+        card_payments: { requested: true }
+      }
     });
 
     res.json({ account });
 
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to create connected account" });
+  } catch (err) {
+    console.error("Stripe error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
