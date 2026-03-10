@@ -634,7 +634,19 @@ if (refund) {
         })
         .eq("id", order.id);
 
+        const seller = await supabase
+  .from("sellers")
+  .select("stripe_account_id")
+  .eq("id", order.seller_id)
+  .single();
+
       console.log("Auto released order:", order.id);
+
+      const transfer = await stripe.transfers.create({
+  amount: order.amount_pence,
+  currency: order.currency,
+  destination: seller.data.stripe_account_id
+});
 
     } catch (err) {
       console.log("Auto release failed:", err.message);
