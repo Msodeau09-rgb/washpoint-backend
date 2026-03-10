@@ -487,12 +487,6 @@ app.post("/orders/cancel", authenticateUser, async (req, res) => {
   return res.json({ ok: true });
 });
 
-  const { message } = req.body;
-
-if (!message || message.trim().length < 5) {
-  return res.status(400).send("Message must be at least 5 characters");
-}
-
   const { error } = await supabase
     .from("support_messages")
     .insert({
