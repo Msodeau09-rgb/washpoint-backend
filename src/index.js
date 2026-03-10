@@ -410,11 +410,13 @@ app.post("/orders/cancel", authenticateUser, async (req, res) => {
  */
 app.get("/connect/create-account", async (req, res) => {
   const account = await stripe.accounts.create({
-    type: "express",
-    country: "GB",
-    capabilities: {
-      card_payments: { requested: true },
-      transfers: { requested: true },
+type: "express",
+  country: "GB",
+  email: req.body.email,
+  business_type: "individual",
+  capabilities: {
+    transfers: { requested: true },
+    card_payments: { requested: true }
     },
   });
 
