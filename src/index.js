@@ -425,21 +425,9 @@ if (order.completion_code !== Number(code)) {
   }
 );
 
-app.post("/washer/location", authenticateUser, checkSeller, async (req, res) => {
+eq("id", req.user.id);
 
-  const { latitude, longitude } = req.body;
-
-  await supabase
-    .from("sellers")
-    .update({
-      latitude,
-      longitude
-    })
-    .eq("id", req.user.id);
-
-  res.json({ ok: true });
-
-});
+res.json({ ok: true });
 
 /**
  * ⭐ CANCEL ORDER (ADDED)
