@@ -403,13 +403,13 @@ if (order.completion_code !== Number(code)) {
 }
 
     await supabase
-      .from("orders")
-      .update({
-        status: "completed",
-        completed_at: new Date().toISOString(),
-        completion_code: NULL
-        attempts: 0
-      })
+  .from("orders")
+  .update({
+    status: "completed",
+    completed_at: new Date().toISOString(),
+    completion_code: null,
+    attempts: 0
+  })
       .eq("id", orderId);
 
     return res.json({ ok: true });
