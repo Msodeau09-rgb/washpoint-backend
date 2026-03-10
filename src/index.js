@@ -85,6 +85,37 @@ app.post(
  */
 app.use(express.json());
 
+app.post("/create-checkout-session", async (req, res) => {
+  try {
+    const { price } = req.body;
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "gbp",
+            product_data: {
+              name: "Car Wash",
+            },
+            unit_amount: price * 100,
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: "https://example.com/success",
+      cancel_url: "https://example.com/cancel",
+    });
+
+    res.json({ url: session.url });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Payment session failed" });
+  }
+});
+
 // Health check
 app.get("/_ping", (req, res) => res.json({ ok: true }));
 app.get("/", (req, res) => res.send("Backend is running 🚀"));
