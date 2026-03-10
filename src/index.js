@@ -26,11 +26,12 @@ function checkAdmin(req, res, next) {
 
 const app = express();
 
+app.use(cors());
+app.use(express.json());
+
 app.get("/health", (req, res) => {
   res.json({ status: "WashPoint backend running 🚀" });
 });
-
-app.use(cors());
 
 const PORT = process.env.PORT || 3000;
 
@@ -105,7 +106,6 @@ app.post(
 /**
  * ✅ JSON parser AFTER webhook
  */
-app.use(express.json());
 
 app.post("/create-checkout-session", async (req, res) => {
   try {
