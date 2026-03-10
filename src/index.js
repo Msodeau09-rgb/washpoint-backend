@@ -43,7 +43,7 @@ app.post("/create-connected-account", async (req, res) => {
     const account = await stripe.accounts.create({
       type: "express",
       country: "GB",
-      email: req.body.email,
+      email: req.body?.email || "washer@test.com",
       business_type: "individual",
       capabilities: {
         transfers: { requested: true },
