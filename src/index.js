@@ -339,7 +339,7 @@ app.post("/orders/accept", authenticateUser, checkSeller, async (req, res) => {
 if (order.status !== "available")
   return res.status(400).send("Order is not available");
 
-const completionCode = Math.floor(1000 + Math.random() * 9000);
+const completionCode = Math.floor(100000 + Math.random() * 900000);
 
 const { data: updatedOrder, error: updateError } = await supabase
   .from("orders")
@@ -642,7 +642,7 @@ await supabase
     amount_to_seller_pence: sellerAmount,
     platform_fee_pence: order.amount_pence - sellerAmount
   });
-  
+
     try {
 
       const PayoutTransfer = await stripe.transfers.create({
