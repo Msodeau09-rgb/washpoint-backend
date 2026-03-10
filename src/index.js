@@ -617,6 +617,32 @@ if (refund) {
 
     const sellerAmount = Math.round(order.amount_pence * 0.85);
 
+// check if payout already happened
+const existingRelease = await supabase
+  .from("releases")
+  .select("id")
+  .eq("order_id", order.id)
+  .maybeSingle();
+
+if (existingRelease.data) continue;
+
+const payoutTransfer = await stripe.transfers.create({
+  amount: sellerAmount,
+  currency: "gbp",
+  destination: sellerData.stripe_account_id,
+  metadata: { orderId: order.id },
+});
+
+// record payout
+await supabase
+  .from("releases")
+  .insert({
+    order_id: order.id,
+    stripe_transfer_id: payoutTransfer.id,
+    amount_to_seller_pence: sellerAmount,
+    platform_fee_pence: order.amount_pence - sellerAmount
+  });
+  
     try {
 
       const PayoutTransfer = await stripe.transfers.create({
