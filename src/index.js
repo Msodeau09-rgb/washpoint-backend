@@ -460,6 +460,30 @@ app.post("/orders/cancel", authenticateUser, async (req, res) => {
   return res.json({ ok: true });
 });
 
+app.post("/support/message", authenticateUser, async (req, res) => {
+
+  const { message } = req.body;
+
+  if (!message) {
+    return res.status(400).send("Message required");
+  }
+
+  const { error } = await supabase
+    .from("support_messages")
+    .insert({
+      user_id: req.user.id,
+      message
+    });
+
+  if (error) {
+    console.log("Support message error:", error);
+    return res.status(500).send("Failed to send message");
+  }
+
+  res.json({ ok: true });
+
+});
+
 /**
  * CONNECT ROUTES
  */
