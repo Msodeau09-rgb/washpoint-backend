@@ -58,8 +58,18 @@ app.post("/create-connected-account", async (req, res) => {
     stripe_account_id: account.id,
     onboarding_complete: false
   });
-  
-    res.json({ account });
+
+const accountLink = await stripe.accountLinks.create({
+  account: account.id,
+  refresh_url: "https://washpoint-backend-1.onrender.com/reauth",
+  return_url: "https://washpoint-backend-1.onrender.com/return",
+  type: "account_onboarding"
+});
+
+res.json({
+  accountId: account.id,
+  onboardingUrl: accountLink.url
+});
 
   } catch (err) {
     console.error("Stripe error:", err);
