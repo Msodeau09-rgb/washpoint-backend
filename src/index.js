@@ -125,9 +125,36 @@ app.post(
  * ✅ JSON parser AFTER webhook
  */
 
-app.post("/create-checkout-session", async (req, res) => {
+app.post("/create-checkout-session", authenticateUser, async (req, res) => {
   try {
     const { price } = req.body;
+
+    const { data: profile } = await supabase
+  .from("profiles")
+  .select("date_of_birth")
+  .eq("id", req.user.id)
+  .single();
+
+if (!profile?.date_of_birth) {
+  return res.status(400).send("Date of birth required");
+}
+
+const dob = new Date(profile.date_of_birth);
+const age = Math.floor((Date.now() - dob) / 31557600000);
+
+// 13–16 restrictions
+if (age >= 13 && age <= 16) {
+
+  if (price !== 15 && price !== 25) {
+    return res.status(400).send("Ages 13–16 can only book £15 or £25 washes");
+  }
+
+}
+
+// minimum price
+if (price < 15) {
+  return res.status(400).send("Minimum wash price is £15");
+}
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
@@ -460,8 +487,6 @@ app.post("/orders/cancel", authenticateUser, async (req, res) => {
   return res.json({ ok: true });
 });
 
-app.post("/support/message", authenticateUser, async (req, res) => {
-
   const { message } = req.body;
 
 if (!message || message.trim().length < 5) {
@@ -481,8 +506,6 @@ if (!message || message.trim().length < 5) {
   }
 
   res.json({ ok: true });
-
-});
 
 app.post("/support/message", authenticateUser, async (req, res) => {
 
