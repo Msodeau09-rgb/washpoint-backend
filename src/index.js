@@ -583,6 +583,10 @@ app.post(
 
     const sellerAmount = Math.round(order.amount_pence * 0.85);
 
+    if (!amount_pence || amount_pence < 1500) {
+  return res.status(400).send("Invalid order amount");
+}
+
     const transfer = await stripe.transfers.create({
       amount: sellerAmount,
       currency: "gbp",
