@@ -148,6 +148,20 @@ app.post("/create-checkout-session", async (req, res) => {
       cancel_url: "https://example.com/cancel",
     });
 
+    const seller = await supabase
+  .from("sellers")
+  .select("stripe_account_id")
+  .eq("id", req.body.seller_id)
+  .single();
+
+const onboarded = await isSellerOnboarded(seller.data.stripe_account_id);
+
+if (!onboarded) {
+  return res.status(400).json({
+    error: "Seller has not completed Stripe onboarding"
+  });
+}
+
     res.json({ url: session.url });
 
   } catch (error) {
