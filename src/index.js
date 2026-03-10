@@ -464,9 +464,9 @@ app.post("/support/message", authenticateUser, async (req, res) => {
 
   const { message } = req.body;
 
-  if (!message) {
-    return res.status(400).send("Message required");
-  }
+if (!message || message.trim().length < 5) {
+  return res.status(400).send("Message must be at least 5 characters");
+}
 
   const { error } = await supabase
     .from("support_messages")
