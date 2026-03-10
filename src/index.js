@@ -306,7 +306,7 @@ if (order.status !== "completed")
 
     const sellerAmount = Math.round(order.amount_pence * 0.85);
 
-    const transfer = await stripe.transfers.create({
+    const payoutTransfer = await stripe.transfers.create({
       amount: sellerAmount,
       currency: "gbp",
       destination: sellerData.stripe_account_id,
