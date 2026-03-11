@@ -487,6 +487,12 @@ app.post("/orders/cancel", authenticateUser, async (req, res) => {
   return res.json({ ok: true });
 });
 
+/**
+ * SUPPORT MESSAGE
+ */
+app.post("/support/message", authenticateUser, async (req, res) => {
+  const { message } = req.body;
+
   const { error } = await supabase
     .from("support_messages")
     .insert({
@@ -500,24 +506,23 @@ app.post("/orders/cancel", authenticateUser, async (req, res) => {
   }
 
   res.json({ ok: true });
+});
 
 /**
  * CONNECT ROUTES
  */
 app.get("/connect/create-account", async (req, res) => {
   const account = await stripe.accounts.create({
-type: "express",
-  country: "GB",
-  email: req.body.email,
-  business_type: "individual",
-  capabilities: {
-    transfers: { requested: true },
-    card_payments: { requested: true }
+    type: "express",
+    country: "GB",
+    email: req.body.email,
+    business_type: "individual",
+    capabilities: {
+      transfers: { requested: true },
+      card_payments: { requested: true }
     },
   });
 
-  app.post("/support/message", authenticateUser, async (req, res) => {
-    
   await supabase
     .from("sellers")
     .insert({ stripe_account_id: account.id });
