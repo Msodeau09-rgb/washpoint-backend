@@ -501,20 +501,6 @@ app.post("/orders/cancel", authenticateUser, async (req, res) => {
 
   res.json({ ok: true });
 
-  if (error) {
-    console.log("Support message error:", error);
-    return res.status(500).send("Failed to send message");
-  }
-
-  res.json({ ok: true });
-
-  if (error) {
-    console.log("Support message error:", error);
-    return res.status(500).send("Failed to send message");
-  }
-
-  res.json({ ok: true });
-
 /**
  * CONNECT ROUTES
  */
