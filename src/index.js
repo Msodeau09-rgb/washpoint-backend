@@ -516,6 +516,8 @@ type: "express",
     },
   });
 
+  app.post("/support/message", authenticateUser, async (req, res) => {
+    
   await supabase
     .from("sellers")
     .insert({ stripe_account_id: account.id });
