@@ -835,6 +835,29 @@ app.post("/refund-request", authenticateUser, async (req, res) => {
 
 });
 
+app.post("/api/orders", async (req, res) => {
+  try {
+    const { service, price, location } = req.body;
+
+    // TEMPORARY (just to stop error)
+    return res.status(200).json({
+      success: true,
+      order: {
+        id: "order_123",
+        service,
+        price,
+        location
+      }
+    });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      error: "Order failed"
+    });
+  }
+});
+
 // 🔥 KEEP THIS LAST
 app.listen(PORT, () =>
   console.log(`Backend running at http://localhost:${PORT}`)
