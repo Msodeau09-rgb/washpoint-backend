@@ -29,36 +29,46 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// SIGN UP
 app.post("/api/auth/sign-up/email", async (req, res) => {
   try {
     const { email, password, firstName, surname } = req.body;
 
-    // 👉 Save user in Supabase
-    // (you can improve this later)
-    
     return res.status(200).json({
-      success: true,
-      message: "User created"
+      user: {
+        id: "123",
+        email,
+        firstName,
+        surname
+      },
+      session: {
+        token: "test-token"
+      }
     });
+
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: "Signup failed" });
+    return res.status(400).json({
+      error: "Signup failed"
+    });
   }
 });
 
-
-// LOGIN
 app.post("/api/auth/sign-in/email", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email } = req.body;
 
     return res.status(200).json({
-      success: true,
-      message: "Logged in"
+      user: {
+        id: "123",
+        email
+      },
+      token: "test-token"
     });
+
   } catch (err) {
-    return res.status(500).json({ error: "Login failed" });
+    return res.status(500).json({
+      error: "Login failed"
+    });
   }
 });
 
