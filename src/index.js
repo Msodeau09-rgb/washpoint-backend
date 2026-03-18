@@ -29,6 +29,47 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// SIGN UP
+app.post("/api/auth/sign-up/email", async (req, res) => {
+  try {
+    const { email, password, firstName, surname } = req.body;
+
+    // 👉 Save user in Supabase
+    // (you can improve this later)
+    
+    return res.status(200).json({
+      success: true,
+      message: "User created"
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Signup failed" });
+  }
+});
+
+
+// LOGIN
+app.post("/api/auth/sign-in/email", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    return res.status(200).json({
+      success: true,
+      message: "Logged in"
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Login failed" });
+  }
+});
+
+
+// SESSION (fixes your 404 error)
+app.get("/api/auth/get-session", async (req, res) => {
+  return res.status(200).json({
+    user: null
+  });
+});
+
 app.get("/health", (req, res) => {
   res.json({ status: "WashPoint backend running 🚀" });
 });
