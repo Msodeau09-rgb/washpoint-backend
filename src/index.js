@@ -29,6 +29,35 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+import Stripe from 'stripe';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+app.post('/api/stripe/create-payment-intent', async (req, res) => {
+  try {
+    const { amount, orderId } = req.body;
+
+    if (!amount) {
+      return res.status(400).json({ error: 'Amount is required' });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount,
+      currency: 'gbp',
+      automatic_payment_methods: { enabled: true },
+      metadata: { orderId },
+    });
+
+    res.json({
+      clientSecret: paymentIntent.client_secret,
+    });
+
+  } catch (err) {
+    console.error('Stripe error:', err);
+    res.status(500).json({ error: 'Failed to create payment intent' });
+  }
+});
+
 app.post("/api/auth/sign-up/email", async (req, res) => {
   try {
     const { email, password, firstName, surname } = req.body;
@@ -85,8 +114,6 @@ app.get("/health", (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 app.post("/create-connected-account", async (req, res) => {
   try {
@@ -178,20 +205,56 @@ app.post(
 
 app.post("/create-checkout-session", authenticateUser, async (req, res) => {
   try {
-    const { price } = req.body;
+    const { price, seller_id } = req.body;
 
-    const { data: profile } = await supabase
-  .from("profiles")
-  .select("date_of_birth")
-  .eq("id", req.user.id)
-  .single();
+    const { data: seller, error: sellerError } = await supabase
+      .from("sellers")
+      .select("stripe_account_id")
+      .eq("id", seller_id)
+      .single();
 
-if (!profile?.date_of_birth) {
-  return res.status(400).send("Date of birth required");
-}
+    if (sellerError || !seller?.stripe_account_id) {
+      return res.status(400).json({ error: "Seller not found" });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: price * 100,
+      currency: "gbp",
+      capture_method: "manual",
+      application_fee_amount: Math.round(price * 0.15 * 100),
+      transfer_data: {
+        destination: seller.stripe_account_id,
+      },
+    });
+
+    return res.json({
+      clientSecret: paymentIntent.client_secret
+    });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Payment failed" });
+  }
+});
+
+    // ✅ CLEAN CHECKOUT SESSION (NO PAYMENT INTENT HERE)
+
 
 const dob = new Date(profile.date_of_birth);
 const age = Math.floor((Date.now() - dob) / 31557600000);
+const seller = await supabase
+  .from("sellers")
+  .select("stripe_account_id")
+  .eq("id", req.body.seller_id)
+  .single();
+
+if (!seller.data?.stripe_account_id) {
+  return res.status(400).json({ error: "Seller not found or not onboarded" });
+}
+
+res.json({
+  clientSecret: paymentIntent.client_secret
+});
 
 // 13–16 restrictions
 if (age >= 13 && age <= 16) {
@@ -207,24 +270,20 @@ if (price < 15) {
   return res.status(400).send("Minimum wash price is £15");
 }
 
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      mode: "payment",
-      line_items: [
+    const paymentIntent = await stripe.paymentIntents.create({
+  amount: price * 100,
+  currency: 'gbp',
+
+  capture_method: 'manual', // 🔥 THIS ENABLES HOLD
+
+  application_fee_amount: Math.round(price * 0.15 * 100),
+
+  transfer_data: {
+    destination: sellerStripeAccountId,
+  },
+});
+
         {
-          price_data: {
-            currency: "gbp",
-            product_data: {
-              name: "Car Wash",
-            },
-            unit_amount: price * 100,
-          },
-          quantity: 1,
-        },
-      ],
-      success_url: "https://example.com/success",
-      cancel_url: "https://example.com/cancel",
-    });
 
     const seller = await supabase
   .from("sellers")
@@ -240,13 +299,36 @@ if (!onboarded) {
   });
 }
 
-    res.json({ url: session.url });
+app.post('/complete-job', async (req, res) => {
+  try {
+    const { bookingId, code } = req.body;
 
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Payment session failed" });
+    // 1. Get booking from DB
+    const booking = await getBookingById(bookingId);
+
+    // 2. Check verification code
+    if (booking.verificationCode !== code) {
+      return res.status(400).json({ error: 'Invalid code' });
+    }
+
+    // 3. Capture payment (🔥 THIS RELEASES MONEY)
+    await stripe.paymentIntents.capture(booking.paymentIntentId);
+
+    // 4. Mark booking complete
+    booking.status = 'completed';
+    await saveBooking(booking);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong' });
   }
 });
+
+  console.error(err);
+  res.status(500).json({ error: "Something went wrong" });
+}
 
 // Health check
 app.get("/_ping", (req, res) => res.json({ ok: true }));
@@ -319,22 +401,32 @@ app.get("/checkout", async (req, res) => {
 
   if (error || !order) return res.status(404).send("Order not found");
 
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment",
-    line_items: [
-      {
-        price_data: {
-          currency: "gbp",
-          product_data: { name: `Car wash ${order.id}` },
-          unit_amount: order.amount_pence,
-        },
-        quantity: 1,
-      },
-    ],
-    metadata: { orderId: order.id },
-    success_url: `https://washpoint-backend.onrender.com/success`,
-    cancel_url: `https://washpoint-backend.onrender.com/cancel`,
-  });
+const seller = await supabase
+  .from("sellers")
+  .select("stripe_account_id")
+  .eq("id", req.body.seller_id)
+  .single();
+
+if (!seller.data?.stripe_account_id) {
+  return res.status(400).json({ error: "Seller not found or not onboarded" });
+}
+
+const paymentIntent = await stripe.paymentIntents.create({
+  amount: price * 100,
+  currency: "gbp",
+
+  capture_method: "manual", // 🔥 holds money
+
+  application_fee_amount: Math.round(price * 0.15 * 100),
+
+  transfer_data: {
+    destination: seller.data.stripe_account_id,
+  },
+});
+
+res.json({
+  clientSecret: paymentIntent.client_secret
+});
 
 res.json({
   url: session.url
@@ -489,7 +581,15 @@ if (order.completion_code !== Number(code)) {
   return res.status(400).send("Invalid completion code");
 }
 
-    await supabase
+// 🔥 CAPTURE PAYMENT (RELEASE MONEY)
+if (!order.stripe_payment_intent_id) {
+  return res.status(400).send("No payment intent found");
+}
+
+await stripe.paymentIntents.capture(order.stripe_payment_intent_id);
+
+// ✅ THEN mark order complete
+await supabase
   .from("orders")
   .update({
     status: "completed",
@@ -497,7 +597,8 @@ if (order.completion_code !== Number(code)) {
     completion_code: null,
     attempts: 0
   })
-      .eq("id", orderId);
+  
+  .eq("id", orderId);
 
     return res.json({ ok: true });
   }
@@ -520,22 +621,18 @@ app.post("/orders/cancel", authenticateUser, async (req, res) => {
   if (order.status === "released")
     return res.status(400).send("Cannot cancel released order");
 
-  if (order.status === "accepted" || order.status === "completed") {
+if (order.status === "accepted" || order.status === "completed") {
   return res.status(400).send("Cannot cancel job after washer accepted it");
 }
 
-  if (order.stripe_payment_intent_id) {
-    await stripe.refunds.create({
-      payment_intent: order.stripe_payment_intent_id,
-    });
-  }
+await stripe.paymentIntents.cancel(order.stripe_payment_intent_id);
 
-  await supabase
-    .from("orders")
-    .update({ status: "cancelled" })
-    .eq("id", orderId);
+await supabase
+  .from("orders")
+  .update({ status: "cancelled" })
+  .eq("id", orderId);
 
-  return res.json({ ok: true });
+return res.json({ ok: true });
 });
 
 /**
