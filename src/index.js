@@ -29,8 +29,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-import Stripe from 'stripe';
-
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 app.post('/api/stripe/create-payment-intent', async (req, res) => {
@@ -49,8 +47,8 @@ app.post('/api/stripe/create-payment-intent', async (req, res) => {
     });
 
     return res.json({
-      clientSecret: paymentIntent.client_secret,
-    });
+  clientSecret: paymentIntent.client_secret,
+});
 
   } catch (error) {
     console.error(error);
@@ -229,10 +227,6 @@ app.post("/create-checkout-session", authenticateUser, async (req, res) => {
       },
     });
 
-    return res.json({
-      clientSecret: paymentIntent.client_secret
-    });
-
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Payment failed" });
@@ -240,66 +234,6 @@ app.post("/create-checkout-session", authenticateUser, async (req, res) => {
 });
 
     // ✅ CLEAN CHECKOUT SESSION (NO PAYMENT INTENT HERE)
-
-
-const dob = new Date(profile.date_of_birth);
-const age = Math.floor((Date.now() - dob) / 31557600000);
-const seller = await supabase
-  .from("sellers")
-  .select("stripe_account_id")
-  .eq("id", req.body.seller_id)
-  .single();
-
-if (!seller.data?.stripe_account_id) {
-  return res.status(400).json({ error: "Seller not found or not onboarded" });
-}
-
-res.json({
-  clientSecret: paymentIntent.client_secret
-});
-
-// 13–16 restrictions
-if (age >= 13 && age <= 16) {
-
-  if (price !== 15 && price !== 25) {
-    return res.status(400).send("Ages 13–16 can only book £15 or £25 washes");
-  }
-
-}
-
-// minimum price
-if (price < 15) {
-  return res.status(400).send("Minimum wash price is £15");
-}
-
-    const paymentIntent = await stripe.paymentIntents.create({
-  amount: price * 100,
-  currency: 'gbp',
-
-  capture_method: 'manual', // 🔥 THIS ENABLES HOLD
-
-  application_fee_amount: Math.round(price * 0.15 * 100),
-
-  transfer_data: {
-    destination: sellerStripeAccountId,
-  },
-});
-
-        {
-
-    const seller = await supabase
-  .from("sellers")
-  .select("stripe_account_id")
-  .eq("id", req.body.seller_id)
-  .single();
-
-const onboarded = await isSellerOnboarded(seller.data.stripe_account_id);
-
-if (!onboarded) {
-  return res.status(400).json({
-    error: "Seller has not completed Stripe onboarding"
-  });
-}
 
 app.post('/complete-job', async (req, res) => {
   try {
@@ -327,10 +261,6 @@ app.post('/complete-job', async (req, res) => {
     res.status(500).json({ error: 'Something went wrong' });
   }
 });
-
-  console.error(err);
-  res.status(500).json({ error: "Something went wrong" });
-}
 
 // Health check
 app.get("/_ping", (req, res) => res.json({ ok: true }));
@@ -461,7 +391,7 @@ app.post(
       .single();
 
     const onboarded = await isSellerOnboarded(
-      sellerData.stripe_account_id
+      seller.stripe_account_id
     );
 
     if (!onboarded)
@@ -490,7 +420,7 @@ if (order.status !== "completed")
       .update({ status: "released" })
       .eq("id", order.id);
 
-    return res.json({ ok: true, transferId: transfer.id });
+    return res.json({ ok: true, transferId: payoutTransfer.id });
   }
 );
 
@@ -732,7 +662,7 @@ app.post(
 
     const sellerAmount = Math.round(order.amount_pence * 0.85);
 
-    if (!amount_pence || amount_pence < 1500) {
+    if (!order.amount_pence || order.amount_pence < 1500) {
   return res.status(400).send("Invalid order amount");
 }
 
@@ -753,13 +683,13 @@ app.post(
       })
       .eq("id", orderId);
 
-    return res.json({
-      ok: true,
-      forced: true,
-      transferId: transfer.id,
-    });
-  }
-);
+return res.json({
+  ok: true,
+  forced: true,
+  transferId: transfer.id,
+});
+});
+  
 // ⭐ ADMIN — Cancel ANY order
 app.post("/admin/cancel", authenticateUser, checkAdmin, async (req, res) => {
 
@@ -853,7 +783,7 @@ if (existingRelease.data) continue;
 const payoutTransfer = await stripe.transfers.create({
   amount: sellerAmount,
   currency: "gbp",
-  destination: sellerData.stripe_account_id,
+  destination: seller.stripe_account_id,
   metadata: { orderId: order.id },
 });
 
