@@ -48,13 +48,15 @@ app.post('/api/stripe/create-payment-intent', async (req, res) => {
       metadata: { orderId },
     });
 
-    res.json({
+    return res.json({
       clientSecret: paymentIntent.client_secret,
     });
 
-  } catch (err) {
-    console.error('Stripe error:', err);
-    res.status(500).json({ error: 'Failed to create payment intent' });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      error: error.message,
+    });
   }
 });
 
