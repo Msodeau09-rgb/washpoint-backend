@@ -29,6 +29,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+console.log("STRIPE KEY:", process.env.STRIPE_SECRET_KEY);
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 app.post('/api/stripe/create-payment-intent', async (req, res) => {
