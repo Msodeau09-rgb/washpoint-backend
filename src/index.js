@@ -35,6 +35,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 app.post("/api/stripe/create-checkout-session", async (req, res) => {
   try {
+    const { amount, orderId } = req.body;
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       mode: "payment",
@@ -45,13 +47,16 @@ app.post("/api/stripe/create-checkout-session", async (req, res) => {
             product_data: {
               name: "WashPoint Car Wash",
             },
-            unit_amount: 1500, // £15
+            unit_amount: Math.round(amount * 100), // ✅ dynamic price
           },
           quantity: 1,
         },
       ],
       success_url: "https://washpoint-backend-1.onrender.com/success",
-      cancel_url: "https://washpoint-backend-1.onrender.com/cancel",
+      cancel_url: "https://washpoint-backend-1.onrender.com",
+      metadata: {
+        orderId: orderId || "unknown",
+      },
     });
 
     res.json({ url: session.url });
@@ -61,7 +66,6 @@ app.post("/api/stripe/create-checkout-session", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 app.post("/api/auth/sign-up/email", async (req, res) => {
   try {
