@@ -33,32 +33,35 @@ console.log("STRIPE KEY:", process.env.STRIPE_SECRET_KEY);
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-app.post('/api/stripe/create-payment-intent', async (req, res) => {
+app.post("/api/stripe/create-checkout-session", async (req, res) => {
   try {
-    const { amount, orderId } = req.body;
-
-    if (!amount) {
-      return res.status(400).json({ error: 'Amount is required' });
-    }
-
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount,
-      currency: 'gbp',
-      automatic_payment_methods: { enabled: true },
-      metadata: { orderId },
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "gbp",
+            product_data: {
+              name: "WashPoint Car Wash",
+            },
+            unit_amount: 1500, // £15
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: "https://washpoint-backend-1.onrender.com/success",
+      cancel_url: "https://washpoint-backend-1.onrender.com/cancel",
     });
 
-    return res.json({
-  clientSecret: paymentIntent.client_secret,
-});
+    res.json({ url: session.url });
 
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      error: error.message,
-    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
+
 
 app.post("/api/auth/sign-up/email", async (req, res) => {
   try {
@@ -205,36 +208,6 @@ app.post(
  * ✅ JSON parser AFTER webhook
  */
 
-app.post("/create-checkout-session", authenticateUser, async (req, res) => {
-  try {
-    const { price, seller_id } = req.body;
-
-    const { data: seller, error: sellerError } = await supabase
-      .from("sellers")
-      .select("stripe_account_id")
-      .eq("id", seller_id)
-      .single();
-
-    if (sellerError || !seller?.stripe_account_id) {
-      return res.status(400).json({ error: "Seller not found" });
-    }
-
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: price * 100,
-      currency: "gbp",
-      capture_method: "manual",
-      application_fee_amount: Math.round(price * 0.15 * 100),
-      transfer_data: {
-        destination: seller.stripe_account_id,
-      },
-    });
-
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Payment failed" });
-  }
-});
-
     // ✅ CLEAN CHECKOUT SESSION (NO PAYMENT INTENT HERE)
 
 app.post('/complete-job', async (req, res) => {
@@ -324,48 +297,6 @@ console.log("User:", req.user);
 /**
  * CHECKOUT
  */
-app.get("/checkout", async (req, res) => {
-  const { orderId } = req.query;
-
-  const { data: order, error } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("id", orderId)
-    .single();
-
-  if (error || !order) return res.status(404).send("Order not found");
-
-const seller = await supabase
-  .from("sellers")
-  .select("stripe_account_id")
-  .eq("id", req.body.seller_id)
-  .single();
-
-if (!seller.data?.stripe_account_id) {
-  return res.status(400).json({ error: "Seller not found or not onboarded" });
-}
-
-const paymentIntent = await stripe.paymentIntents.create({
-  amount: price * 100,
-  currency: "gbp",
-
-  capture_method: "manual", // 🔥 holds money
-
-  application_fee_amount: Math.round(price * 0.15 * 100),
-
-  transfer_data: {
-    destination: seller.data.stripe_account_id,
-  },
-});
-
-res.json({
-  clientSecret: paymentIntent.client_secret
-});
-
-res.json({
-  url: session.url
-});
-});
 
 app.get("/success", (req, res) => {
   res.json({ status: "success", message: "Payment successful" });
