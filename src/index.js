@@ -40,6 +40,9 @@ app.post("/api/stripe/create-checkout-session", async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       mode: "payment",
+
+      customer_email: req.body.email || undefined,
+
       line_items: [
         {
           price_data: {
@@ -47,22 +50,24 @@ app.post("/api/stripe/create-checkout-session", async (req, res) => {
             product_data: {
               name: "WashPoint Car Wash",
             },
-            unit_amount: Math.round(amount * 100), // ✅ dynamic price
+            unit_amount: amount || 1500,
           },
           quantity: 1,
         },
       ],
-      success_url: "https://washpoint-backend-1.onrender.com/success",
-      cancel_url: "https://washpoint-backend-1.onrender.com",
+
       metadata: {
         orderId: orderId || "unknown",
       },
+
+      success_url: "washpoint://payment-success?orderId={CHECKOUT_SESSION_ID}",
+      cancel_url: "washpoint://payment-cancelled",
     });
 
     res.json({ url: session.url });
 
   } catch (err) {
-    console.error(err);
+    console.error("Stripe error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -110,6 +115,33 @@ app.post("/api/auth/sign-in/email", async (req, res) => {
   }
 });
 
+import nodemailer from "nodemailer";
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+async function sendInvoiceEmail(session) {
+  const email = session.customer_details?.email;
+
+  if (!email) return;
+
+  await transporter.sendMail({
+    from: "WashPoint <your@email.com>",
+    to: email,
+    subject: "WashPoint Receipt",
+    html: `
+      <h2>Payment Successful</h2>
+      <p>Thanks for your booking.</p>
+      <p><strong>Amount:</strong> £${(session.amount_total / 100).toFixed(2)}</p>
+      <p><strong>Order ID:</strong> ${session.metadata?.orderId}</p>
+    `,
+  });
+}
 
 // SESSION (fixes your 404 error)
 app.get("/api/auth/get-session", async (req, res) => {
@@ -189,57 +221,27 @@ app.post(
       const session = event.data.object;
       const orderId = session.metadata?.orderId;
 
-      if (!orderId) return res.json({ received: true });
+      if (orderId) {
+        await supabase
+          .from("orders")
+          .update({
+            status: "paid",
+            stripe_payment_intent_id: session.payment_intent,
+            paid_at: new Date().toISOString(),
+          })
+          .eq("id", orderId);
 
-      const { error } = await supabase
-        .from("orders")
-        .update({
-          status: "paid",
-          stripe_payment_intent_id: session.payment_intent,
-          paid_at: new Date().toISOString(),
-        })
-        .eq("id", orderId);
+        console.log("✅ Order marked as paid:", orderId);
 
-      if (error) console.log("❌ Supabase update failed:", error.message);
-      else console.log("✅ Marked PAID in DB:", orderId);
+        await sendInvoiceEmail(session);
+      }
     }
 
-    return res.json({ received: true });
+    res.json({ received: true });
   }
 );
-
-/**
- * ✅ JSON parser AFTER webhook
- */
-
     // ✅ CLEAN CHECKOUT SESSION (NO PAYMENT INTENT HERE)
 
-app.post('/complete-job', async (req, res) => {
-  try {
-    const { bookingId, code } = req.body;
-
-    // 1. Get booking from DB
-    const booking = await getBookingById(bookingId);
-
-    // 2. Check verification code
-    if (booking.verificationCode !== code) {
-      return res.status(400).json({ error: 'Invalid code' });
-    }
-
-    // 3. Capture payment (🔥 THIS RELEASES MONEY)
-    await stripe.paymentIntents.capture(booking.paymentIntentId);
-
-    // 4. Mark booking complete
-    booking.status = 'completed';
-    await saveBooking(booking);
-
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Something went wrong' });
-  }
-});
 
 // Health check
 app.get("/_ping", (req, res) => res.json({ ok: true }));
@@ -328,7 +330,7 @@ app.post(
       .single();
 
     const onboarded = await isSellerOnboarded(
-      seller.stripe_account_id
+      sellerData.stripe_account_id
     );
 
     if (!onboarded)
@@ -716,13 +718,6 @@ const existingRelease = await supabase
   .maybeSingle();
 
 if (existingRelease.data) continue;
-
-const payoutTransfer = await stripe.transfers.create({
-  amount: sellerAmount,
-  currency: "gbp",
-  destination: seller.stripe_account_id,
-  metadata: { orderId: order.id },
-});
 
 // record payout
 await supabase
