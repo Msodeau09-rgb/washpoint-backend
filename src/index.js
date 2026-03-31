@@ -192,6 +192,11 @@ app.get("/api/auth/get-session", async (req, res) => {
   });
 });
 
+// ✅ ADD THIS RIGHT HERE
+app.post("/api/payment-success", (req, res) => {
+  res.json({ success: true });
+});
+
 app.get("/health", (req, res) => {
   res.json({ status: "WashPoint backend running 🚀" });
 });
