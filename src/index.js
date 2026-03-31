@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+console.log("🔥 WEBHOOK FIX VERSION 2");
 console.log("SUPABASE_URL:", process.env.SUPABASE_URL);
 console.log("SUPABASE_ANON_KEY:", process.env.SUPABASE_ANON_KEY ? "Loaded" : "Missing");
 
@@ -26,75 +27,54 @@ function checkAdmin(req, res, next) {
 
 const app = express();
 
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+app.post(
+ "/webhook",
+ express.raw({ type: "application/json" }),
+ async (req, res) => {
+   const sig = req.headers["stripe-signature"];
+   let event;
+   try {
+     event = stripe.webhooks.constructEvent(
+       req.body,
+       sig,
+       process.env.STRIPE_WEBHOOK_SECRET
+     );
+   } catch (err) {
+     console.log("❌ Webhook signature failed:", err.message);
+     return res.status(400).send(`Webhook Error: ${err.message}`);
+   }
+   console.log("🔥 WEBHOOK RECEIVED:", event.type);
+   if (event.type === "checkout.session.completed") {
+ const session = event.data.object;
+ const orderId = session.metadata?.orderId;
+ if (!orderId) {
+   console.log("❌ No orderId in metadata");
+   return;
+ }
+ const { error } = await supabase
+   .from("orders")
+   .update({
+     status: "paid",
+     stripe_payment_intent_id: session.payment_intent,
+     paid_at: new Date().toISOString(),
+   })
+   .eq("id", orderId);
+ if (error) {
+   console.log("❌ Order update failed:", error);
+ } else {
+   console.log("✅ Order marked as PAID:", orderId);
+ }
+}
+   res.json({ received: true });
+ }
+);
+
 app.use(cors());
 app.use(express.json());
 
 console.log("STRIPE KEY:", process.env.STRIPE_SECRET_KEY);
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
-app.post("/api/stripe/create-checkout-session", async (req, res) => {
-  try {
-    const { amount, orderId } = req.body;
-
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      mode: "payment",
-
-      customer_email: req.body.email || undefined,
-
-      line_items: [
-        {
-          price_data: {
-            currency: "gbp",
-            product_data: {
-              name: "WashPoint Car Wash",
-            },
-            unit_amount: amount || 1500,
-          },
-          quantity: 1,
-        },
-      ],
-
-      metadata: {
-        orderId: orderId || "unknown",
-      },
-
-      success_url: "washpoint://payment-success?orderId={CHECKOUT_SESSION_ID}",
-      cancel_url: "washpoint://payment-cancelled",
-    });
-
-    res.json({ url: session.url });
-
-  } catch (err) {
-    console.error("Stripe error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/api/auth/sign-up/email", async (req, res) => {
-  try {
-    const { email, password, firstName, surname } = req.body;
-
-    return res.status(200).json({
-      user: {
-        id: "123",
-        email,
-        firstName,
-        surname
-      },
-      session: {
-        token: "test-token"
-      }
-    });
-
-  } catch (err) {
-    console.error(err);
-    return res.status(400).json({
-      error: "Signup failed"
-    });
-  }
-});
 
 app.post("/api/auth/sign-in/email", async (req, res) => {
   try {
@@ -142,6 +122,68 @@ async function sendInvoiceEmail(session) {
     `,
   });
 }
+
+app.post("/api/stripe/create-checkout-session", async (req, res) => {
+  try {
+    const { amount, orderId } = req.body;
+
+    // ✅ create order first
+    let finalOrderId;
+
+const { data: newOrder, error } = await supabase
+  .from("orders")
+  .insert({
+    status: "pending",
+    amount_pence: amount || 1500,
+    currency: "gbp",
+  })
+  .select()
+  .single();
+
+if (error || !newOrder) {
+  console.log("❌ ORDER CREATION FAILED:", error);
+  return res.status(500).json({ error: "Order creation failed" });
+}
+
+finalOrderId = newOrder.id; // 🔥 THIS WAS MISSING
+
+console.log("🧾 ORDER CREATED:", newOrder);
+
+    // ✅ create stripe session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      mode: "payment",
+
+      customer_email: req.body.email || undefined,
+
+      line_items: [
+        {
+          price_data: {
+            currency: "gbp",
+            product_data: {
+              name: "WashPoint Car Wash",
+            },
+            unit_amount: amount || 1500,
+          },
+          quantity: 1,
+        },
+      ],
+
+      metadata: {
+        orderId: finalOrderId,
+      },
+
+      success_url: `washpoint://payment-success?orderId=${finalOrderId}`,
+      cancel_url: "washpoint://payment-cancelled",
+    });
+
+    res.json({ url: session.url });
+
+  } catch (err) {
+    console.error("Stripe error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // SESSION (fixes your 404 error)
 app.get("/api/auth/get-session", async (req, res) => {
@@ -199,50 +241,10 @@ res.json({
 /**
  * ✅ 1) Webhook FIRST (RAW body)
  */
-app.post(
-  "/webhook",
-  express.raw({ type: "application/json" }),
-  async (req, res) => {
-    const sig = req.headers["stripe-signature"];
 
-    let event;
-    try {
-      event = stripe.webhooks.constructEvent(
-        req.body,
-        sig,
-        process.env.STRIPE_WEBHOOK_SECRET
-      );
-    } catch (err) {
-      console.log("❌ Webhook signature failed:", err.message);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
-    }
 
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-      const orderId = session.metadata?.orderId;
 
-      if (orderId) {
-        await supabase
-          .from("orders")
-          .update({
-            status: "paid",
-            stripe_payment_intent_id: session.payment_intent,
-            paid_at: new Date().toISOString(),
-          })
-          .eq("id", orderId);
-
-        console.log("✅ Order marked as paid:", orderId);
-
-        await sendInvoiceEmail(session);
-      }
-    }
-
-    res.json({ received: true });
-  }
-);
     // ✅ CLEAN CHECKOUT SESSION (NO PAYMENT INTENT HERE)
-
-
 // Health check
 app.get("/_ping", (req, res) => res.json({ ok: true }));
 app.get("/", (req, res) => res.send("Backend is running 🚀"));
@@ -310,6 +312,18 @@ app.get("/success", (req, res) => {
 
 app.get("/cancel", (req, res) => {
   res.json({ status: "cancelled", message: "Payment cancelled" });
+});
+
+app.get("/api/user/sellers", async (req, res) => {
+  const { data, error } = await supabase
+    .from("sellers")
+    .select("*");
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  res.json({ ok: true, sellers: data });
 });
 
 /**
@@ -681,86 +695,72 @@ setInterval(async () => {
 
   if (!orders) return;
 
-  for (const order of orders) {
+for (const order of orders) {
 
-    const { data: refund } = await supabase
-  .from("refund_requests")
-  .select("id")
-  .eq("order_id", order.id)
-  .eq("status", "pending")
-  .single();
+  const { data: refund } = await supabase
+    .from("refund_requests")
+    .select("id")
+    .eq("order_id", order.id)
+    .eq("status", "pending")
+    .single();
 
-if (refund) {
-  console.log("Payout paused due to refund request:", order.id);
-  continue;
+  if (refund) continue;
+
+  const paidTime = new Date(order.paid_at);
+  const hoursPassed = (Date.now() - paidTime) / 36e5;
+
+  if (hoursPassed < 24) continue;
+
+  const { data: seller } = await supabase
+    .from("sellers")
+    .select("stripe_account_id")
+    .eq("id", order.seller_id)
+    .single();
+
+  if (!seller?.stripe_account_id) continue;
+
+  const sellerAmount = Math.round(order.amount_pence * 0.85);
+
+  const existingRelease = await supabase
+    .from("releases")
+    .select("id")
+    .eq("order_id", order.id)
+    .maybeSingle();
+
+  if (existingRelease.data) continue;
+
+  try {
+    const PayoutTransfer = await stripe.transfers.create({
+      amount: sellerAmount,
+      currency: "gbp",
+      destination: seller.stripe_account_id,
+      metadata: { orderId: order.id },
+    });
+
+    await supabase.from("releases").insert({
+      order_id: order.id,
+      stripe_transfer_id: PayoutTransfer.id,
+      amount_to_seller_pence: sellerAmount,
+      platform_fee_pence: order.amount_pence - sellerAmount,
+    });
+
+    await supabase
+      .from("orders")
+      .update({
+        status: "released",
+        released_at: new Date().toISOString(),
+      })
+      .eq("id", order.id);
+
+    console.log("Auto released order:", order.id);
+
+  } catch (err) {
+    console.log("Auto release failed:", err.message);
+  }
 }
 
-    const paidTime = new Date(order.paid_at);
-    const hoursPassed = (Date.now() - paidTime) / 36e5;
-
-    if (hoursPassed < 24) continue;
-
-    const { data: seller } = await supabase
-      .from("sellers")
-      .select("stripe_account_id")
-      .eq("id", order.seller_id)
-      .single();
-
-    if (!seller?.stripe_account_id) continue;
-
-    const sellerAmount = Math.round(order.amount_pence * 0.85);
-
-// check if payout already happened
-const existingRelease = await supabase
-  .from("releases")
-  .select("id")
-  .eq("order_id", order.id)
-  .maybeSingle();
-
-if (existingRelease.data) continue;
-
-// record payout
-await supabase
-  .from("releases")
-  .insert({
-    order_id: order.id,
-    stripe_transfer_id: payoutTransfer.id,
-    amount_to_seller_pence: sellerAmount,
-    platform_fee_pence: order.amount_pence - sellerAmount
-  });
-
-    try {
-
-      const PayoutTransfer = await stripe.transfers.create({
-        amount: sellerAmount,
-        currency: "gbp",
-        destination: seller.stripe_account_id,
-        metadata: { orderId: order.id },
-      });
-
-      await supabase
-        .from("orders")
-        .update({
-          status: "released",
-          released_at: new Date().toISOString()
-        })
-        .eq("id", order.id);
-
-        const seller = await supabase
-  .from("sellers")
-  .select("stripe_account_id")
-  .eq("id", order.seller_id)
-  .single();
-
-      console.log("Auto released order:", order.id);
-
-    } catch (err) {
-      console.log("Auto release failed:", err.message);
-    }
-
-  }
-
 }, 300000);
+
 /**
  * REFUND REQUEST
  */
