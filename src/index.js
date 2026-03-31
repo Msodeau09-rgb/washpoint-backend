@@ -95,6 +95,23 @@ app.post("/api/auth/sign-in/email", async (req, res) => {
   }
 });
 
+app.post("/api/auth/sign-up/email", async (req, res) => {
+ try {
+   const { email } = req.body;
+   return res.status(200).json({
+     user: {
+       id: "123",
+       email
+     },
+     token: "test-token"
+   });
+ } catch (err) {
+   return res.status(500).json({
+     error: "Signup failed"
+   });
+ }
+});
+
 import nodemailer from "nodemailer";
 
 const transporter = nodemailer.createTransport({
