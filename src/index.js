@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-console.log("🔥 WEBHOOK FIX VERSION 2");
+console.log("🔥 WEBHOOK FIX VERSION 16");
 console.log("SUPABASE_URL:", process.env.SUPABASE_URL);
 console.log("SUPABASE_ANON_KEY:", process.env.SUPABASE_ANON_KEY ? "Loaded" : "Missing");
 
