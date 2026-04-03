@@ -841,6 +841,24 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 
+app.get("/api/orders/my-orders", async (c) => {
+ try {
+   const { data, error } = await supabase
+     .from("orders")
+     .select("*")
+     .order("created_at", { ascending: false });
+   if (error) {
+     console.error("❌ FETCH ORDERS ERROR:", error);
+     return c.json({ error: error.message }, 500);
+   }
+   console.log("✅ ORDERS FETCHED:", data);
+   return c.json(data);
+ } catch (err) {
+   console.error("❌ SERVER ERROR:", err);
+   return c.json({ error: "Server error" }, 500);
+ }
+});
+
 // 🔥 KEEP THIS LAST
 app.listen(PORT, () =>
   console.log(`Backend running at http://localhost:${PORT}`)
