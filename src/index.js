@@ -841,21 +841,19 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 
-app.get("/api/orders/my-orders", async (c) => {
+app.get('/api/orders/my-orders', async (req, res) => {
  try {
    const { data, error } = await supabase
-     .from("orders")
-     .select("*")
-     .order("created_at", { ascending: false });
+     .from('orders')
+     .select('*');
    if (error) {
-     console.error("❌ FETCH ORDERS ERROR:", error);
-     return c.json({ error: error.message }, 500);
+     console.error(error);
+     return res.status(500).json({ error: 'Failed to fetch orders' });
    }
-   console.log("✅ ORDERS FETCHED:", data);
-   return c.json(data);
+   return res.json(data);
  } catch (err) {
-   console.error("❌ SERVER ERROR:", err);
-   return c.json({ error: "Server error" }, 500);
+   console.error('SERVER ERROR:', err);
+   return res.status(500).json({ error: 'Server crash' });
  }
 });
 
