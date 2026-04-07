@@ -873,17 +873,15 @@ app.post("/api/stripe/create-payment-intent", async (req, res) => {
 
     }
 
-    // TEMPORARY TEST RESPONSE (we’ll add Stripe after)
-
-    return res.json({
-
-      success: true,
-
-      message: "Payment intent route working",
-
-      amount,
-
-    });
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const paymentIntent = await stripe.paymentIntents.create({
+ amount: amount,
+ currency: "gbp",
+ automatic_payment_methods: { enabled: true },
+});
+return res.json({
+ clientSecret: paymentIntent.client_secret,
+});
 
   } catch (err) {
 
