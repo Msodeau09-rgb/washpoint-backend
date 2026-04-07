@@ -877,6 +877,9 @@ const paymentIntent = await stripe.paymentIntents.create({
  currency: "gbp",
  automatic_payment_methods: { enabled: true },
 });
+
+console.log("✅ Sending clientSecret:", paymentIntent.client_secret);
+
 return res.json({
  clientSecret: paymentIntent.client_secret,
 });
