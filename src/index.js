@@ -856,7 +856,50 @@ app.get('/api/orders/my-orders', async (req, res) => {
    return res.status(500).json({ error: 'Server crash' });
  }
 });
+const express = require("express");
 
+const app = express();
+
+app.use(express.json());
+
+// ✅ STRIPE ROUTES
+
+app.post("/api/stripe/create-payment-intent", async (req, res) => {
+
+  try {
+
+    console.log("💳 Create payment intent hit");
+
+    const amount = req.body.amount_pence;
+
+    if (!amount) {
+
+      return res.status(400).json({ error: "Missing amount" });
+
+    }
+
+    // TEMPORARY TEST RESPONSE (we’ll add Stripe after)
+
+    return res.json({
+
+      success: true,
+
+      message: "Payment intent route working",
+
+      amount,
+
+    });
+
+  } catch (err) {
+
+    console.error("❌ Error:", err);
+
+    return res.status(500).json({ error: "Server error" });
+
+  }
+
+});
+ 
 // 🔥 KEEP THIS LAST
 app.listen(PORT, () =>
   console.log(`Backend running at http://localhost:${PORT}`)
