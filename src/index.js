@@ -27,8 +27,6 @@ function checkAdmin(req, res, next) {
 
 const app = express();
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
 app.post(
  "/webhook",
  express.raw({ type: "application/json" }),
@@ -873,7 +871,7 @@ app.post("/api/stripe/create-payment-intent", async (req, res) => {
 
     }
 
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const paymentIntent = await stripe.paymentIntents.create({
  amount: amount,
  currency: "gbp",
