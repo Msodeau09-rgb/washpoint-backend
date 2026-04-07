@@ -25,6 +25,8 @@ function checkAdmin(req, res, next) {
   next();
 }
 
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
 const app = express();
 
 app.post(
@@ -72,7 +74,6 @@ app.post(
 app.use(cors());
 app.use(express.json());
 
-console.log("STRIPE KEY:", process.env.STRIPE_SECRET_KEY);
 
 app.post("/api/auth/sign-in/email", async (req, res) => {
   try {
@@ -871,7 +872,6 @@ app.post("/api/stripe/create-payment-intent", async (req, res) => {
 
     }
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const paymentIntent = await stripe.paymentIntents.create({
  amount: amount,
  currency: "gbp",
