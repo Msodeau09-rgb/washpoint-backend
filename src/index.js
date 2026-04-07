@@ -858,8 +858,6 @@ app.get('/api/orders/my-orders', async (req, res) => {
 });
 const express = require("express");
 
-app.use(express.json());
-
 // ✅ STRIPE ROUTES
 
 app.post("/api/stripe/create-payment-intent", async (req, res) => {
