@@ -858,8 +858,6 @@ app.get('/api/orders/my-orders', async (req, res) => {
 });
 const express = require("express");
 
-const app = express();
-
 app.use(express.json());
 
 // ✅ STRIPE ROUTES
