@@ -856,7 +856,6 @@ app.get('/api/orders/my-orders', async (req, res) => {
    return res.status(500).json({ error: 'Server crash' });
  }
 });
-const express = require("express");
 
 // ✅ STRIPE ROUTES
 
