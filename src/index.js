@@ -865,30 +865,34 @@ app.post("/api/stripe/create-payment-intent", async (req, res) => {
    if (!amount) {
      return res.status(400).json({ error: "Missing amount" });
    }
-   const session = await stripe.checkout.sessions.create({
- // ...
- mode: 'payment',
+const finalOrderId = `order_${Date.now()}`;
+const session = await stripe.checkout.sessions.create({
  payment_method_types: ['card'],
- // ADD THIS:
- allow_promotion_codes: false,
- // IMPORTANT:
- submit_type: 'pay',
- // This helps UX:
- after_expiration: {
-   recovery: {
-     enabled: false,
+ mode: 'payment',
+ line_items: [
+   {
+     price_data: {
+       currency: 'gbp',
+       product_data: {
+         name: 'WashPoint Car Wash',
+       },
+       unit_amount: amount,
+     },
+     quantity: 1,
    },
+ ],
+ metadata: {
+   orderId: finalOrderId,
  },
+ success_url: `washpoint://payment-success?orderId=${finalOrderId}`,
+ cancel_url: `washpoint://payment-cancelled?orderId=${finalOrderId}`,
 });
 
-   console.log("✅ Checkout URL:", session.url);
-   res.json({
-     url: session.url,
-   });
- } catch (err) {
-   console.error("❌ Stripe error:", err);
-   res.status(500).json({ error: err.message });
- }
+res.json({ url: session.url });
+} catch (err) {
+ console.error("Stripe error:", err);
+ res.status(500).json({ error: err.message });
+}
 });
 
 // KEEP THIS LAST
