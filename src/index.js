@@ -880,8 +880,8 @@ app.post("/api/stripe/create-payment-intent", async (req, res) => {
        },
      ],
      mode: 'payment',
-     success_url: 'https://example.com/success',
-     cancel_url: 'https://example.com/cancel',
+     success_url: `washpoint://payment-success?orderId=${req.body.orderId}`,
+     cancel_url: `washpoint://payment-cancelled?orderId=${req.body.orderId}`,
    });
    console.log("✅ Checkout URL:", session.url);
    res.json({
