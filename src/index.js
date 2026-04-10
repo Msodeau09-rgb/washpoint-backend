@@ -189,8 +189,8 @@ console.log("🧾 ORDER CREATED:", newOrder);
         orderId: finalOrderId,
       },
 
-      success_url: `washpoint://payment-success?orderId=${finalOrderId}`,
-      cancel_url: "washpoint://payment-cancelled",
+      success_url: `washpoint://payment-success?orderId=${orderId}&paymentIntentId={CHECKOUT_SESSION_ID}`,
+      cancel_url: `washpoint://payment-cancelled?orderId=${orderId}`,
     });
 
     res.json({ url: session.url });
