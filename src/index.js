@@ -50,9 +50,9 @@ app.post(
  const session = event.data.object;
  const orderId = session.metadata?.orderId;
  if (!orderId) {
-   console.log("❌ No orderId in metadata");
-   return;
- }
+ console.log("❌ No orderId in metadata");
+ return res.json({ received: true });
+}
  const { error } = await supabase
    .from("orders")
    .update({
@@ -857,43 +857,6 @@ app.get('/api/orders/my-orders', async (req, res) => {
 });
 
 // ✅ STRIPE ROUTES
-
-app.post("/api/stripe/create-payment-intent", async (req, res) => {
- try {
-   console.log("🧾 Create checkout session hit");
-   const amount = req.body.amount_pence;
-   if (!amount) {
-     return res.status(400).json({ error: "Missing amount" });
-   }
-const finalOrderId = `order_${Date.now()}`;
-const session = await stripe.checkout.sessions.create({
- payment_method_types: ['card'],
- mode: 'payment',
- line_items: [
-   {
-     price_data: {
-       currency: 'gbp',
-       product_data: {
-         name: 'WashPoint Car Wash',
-       },
-       unit_amount: amount,
-     },
-     quantity: 1,
-   },
- ],
- metadata: {
-   orderId: finalOrderId,
- },
- success_url: `washpoint://payment-success?orderId=${finalOrderId}`,
- cancel_url: `washpoint://payment-cancelled?orderId=${finalOrderId}`,
-});
-
-res.json({ url: session.url });
-} catch (err) {
- console.error("Stripe error:", err);
- res.status(500).json({ error: err.message });
-}
-});
 
 // KEEP THIS LAST
 app.listen(PORT, () =>
