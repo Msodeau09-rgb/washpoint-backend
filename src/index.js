@@ -891,7 +891,7 @@ app.post("/api/stripe/create-payment-intent", async (req, res) => {
  }
 });
 
-// 🔥 KEEP THIS LAST
+// KEEP THIS LAST
 app.listen(PORT, () =>
   console.log(`Backend running at http://localhost:${PORT}`)
 );
