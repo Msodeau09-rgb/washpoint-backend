@@ -866,23 +866,21 @@ app.post("/api/stripe/create-payment-intent", async (req, res) => {
      return res.status(400).json({ error: "Missing amount" });
    }
    const session = await stripe.checkout.sessions.create({
-     payment_method_types: ['card'],
-     line_items: [
-       {
-         price_data: {
-           currency: 'gbp',
-           product_data: {
-             name: 'WashPoint Car Wash',
-           },
-           unit_amount: amount,
-         },
-         quantity: 1,
-       },
-     ],
-     mode: 'payment',
-     success_url: `washpoint://payment-success?orderId=${req.body.orderId}`,
-     cancel_url: `washpoint://payment-cancelled?orderId=${req.body.orderId}`,
-   });
+ // ...
+ mode: 'payment',
+ payment_method_types: ['card'],
+ // ADD THIS:
+ allow_promotion_codes: false,
+ // IMPORTANT:
+ submit_type: 'pay',
+ // This helps UX:
+ after_expiration: {
+   recovery: {
+     enabled: false,
+   },
+ },
+});
+
    console.log("✅ Checkout URL:", session.url);
    res.json({
      url: session.url,
