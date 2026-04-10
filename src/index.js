@@ -859,41 +859,40 @@ app.get('/api/orders/my-orders', async (req, res) => {
 // ✅ STRIPE ROUTES
 
 app.post("/api/stripe/create-payment-intent", async (req, res) => {
-
-  try {
-
-    console.log("💳 Create payment intent hit");
-
-    const amount = req.body.amount_pence;
-
-    if (!amount) {
-
-      return res.status(400).json({ error: "Missing amount" });
-
-    }
-
-const paymentIntent = await stripe.paymentIntents.create({
- amount: amount,
- currency: "gbp",
- automatic_payment_methods: { enabled: true },
+ try {
+   console.log("🧾 Create checkout session hit");
+   const amount = req.body.amount_pence;
+   if (!amount) {
+     return res.status(400).json({ error: "Missing amount" });
+   }
+   const session = await stripe.checkout.sessions.create({
+     payment_method_types: ['card'],
+     line_items: [
+       {
+         price_data: {
+           currency: 'gbp',
+           product_data: {
+             name: 'WashPoint Car Wash',
+           },
+           unit_amount: amount,
+         },
+         quantity: 1,
+       },
+     ],
+     mode: 'payment',
+     success_url: 'https://example.com/success',
+     cancel_url: 'https://example.com/cancel',
+   });
+   console.log("✅ Checkout URL:", session.url);
+   res.json({
+     url: session.url,
+   });
+ } catch (err) {
+   console.error("❌ Stripe error:", err);
+   res.status(500).json({ error: err.message });
+ }
 });
 
-console.log("✅ Sending clientSecret:", paymentIntent.client_secret);
-
-return res.json({
- clientSecret: paymentIntent.client_secret,
-});
-
-  } catch (err) {
-
-    console.error("❌ Error:", err);
-
-    return res.status(500).json({ error: "Server error" });
-
-  }
-
-});
- 
 // 🔥 KEEP THIS LAST
 app.listen(PORT, () =>
   console.log(`Backend running at http://localhost:${PORT}`)
