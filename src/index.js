@@ -856,6 +856,51 @@ app.get('/api/orders/my-orders', async (req, res) => {
  }
 });
 
+app.post('/api/subscriptions/create-payment', async (req, res) => {
+ try {
+   console.log("CREATE PAYMENT HIT");
+   const session = await stripe.checkout.sessions.create({
+     payment_method_types: ['card'],
+     mode: 'subscription',
+     line_items: [
+       {
+         price: 'price_1TLkIhJI83ux8bzgNBRBhU2F', 
+         quantity: 1,
+       },
+     ],
+     success_url: 'washpoint://payment-success',
+     cancel_url: 'washpoint://payment-cancel',
+   });
+   res.json({ url: session.url });
+ } catch (err) {
+   console.error("STRIPE ERROR:", err);
+   res.status(500).json({ error: err.message });
+ }
+});
+
+app.post('/api/buyer-subscription', async (req, res) => {
+ try {
+   console.log("BUYER SUB HIT");
+   const { userId } = req.body;
+   // 🔥 Save subscription in Supabase
+   const { error } = await supabase
+     .from("profiles")
+     .update({
+       is_premium: true,
+       premium_started_at: new Date().toISOString()
+     })
+     .eq("id", userId);
+   if (error) {
+     console.log("❌ Supabase error:", error);
+     return res.status(500).json({ error: "Database failed" });
+   }
+   res.json({ success: true });
+ } catch (err) {
+   console.error("BUYER ERROR:", err);
+   res.status(500).json({ error: err.message });
+ }
+});
+
 // ✅ STRIPE ROUTES
 
 // KEEP THIS LAST
