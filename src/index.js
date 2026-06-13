@@ -165,16 +165,29 @@ app.post("/api/refund-requests", async (req, res) => {
     const emailAbortController = new AbortController();
     const emailTimeout = setTimeout(() => emailAbortController.abort(), 15000);
 
+    if (!process.env.RESEND_API_KEY) {
+      return res.status(500).json({
+        error: "Refund request email provider is not configured.",
+        details: "Missing RESEND_API_KEY",
+      });
+    }
+
+    const fromEmail =
+      process.env.REFUND_REQUEST_FROM_EMAIL || "onboarding@resend.dev";
+
     const emailResponse = await fetch(
-      "https://smtp.vibecodeapp.com/v1/send/email",
+      "https://api.resend.com/emails",
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
         signal: emailAbortController.signal,
         body: JSON.stringify({
+          from: fromEmail,
           to: receiverEmail,
           subject: `Refund Request: ${body.buyerName}`,
-          fromName: "Vibecode Car Wash",
           html: `
             <h2>New Refund Request</h2>
             <p><strong>Buyer Name:</strong> ${escapeHtml(body.buyerName)}</p>
@@ -208,6 +221,7 @@ app.post("/api/refund-requests", async (req, res) => {
     console.log("Refund request email sent:", {
       status: emailResponse.status,
       response: emailResponseBody,
+      fromEmail,
       receiverEmail,
     });
 
