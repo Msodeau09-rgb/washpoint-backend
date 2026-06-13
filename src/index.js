@@ -148,9 +148,17 @@ app.get("/api/refund-requests/status", (req, res) => {
 });
 
 app.post("/api/refund-requests", async (req, res) => {
+  console.log("Refund request payload received:", {
+    keys: Object.keys(req.body || {}),
+    hasDamageImage: Boolean(req.body?.damageImage),
+    damageImageType: typeof req.body?.damageImage,
+    incidentDateTime: req.body?.incidentDateTime,
+  });
+
   const parsed = refundRequestSchema.safeParse(req.body);
 
   if (!parsed.success) {
+    console.error("Invalid refund request payload:", parsed.error.errors);
     return res.status(400).json({
       error: "Invalid refund request payload",
       details: parsed.error.errors,
