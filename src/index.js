@@ -8,6 +8,7 @@ console.log("SUPABASE_ANON_KEY:", process.env.SUPABASE_ANON_KEY ? "Loaded" : "Mi
 import express from "express";
 import Stripe from "stripe";
 import cors from "cors";
+import { z } from "zod";
 import { supabase } from "./supabaseClient.js";
 import { createOrderSchema } from "./validation/orderValidation.js";
 
@@ -119,6 +120,89 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+});
+
+const refundRequestSchema = z.object({
+  buyerName: z.string().min(1, "Buyer name is required"),
+  washerName: z.string().min(1, "Washer name is required"),
+  damageImage: z.string().optional(),
+  description: z.string().min(1, "Description is required"),
+  incidentDateTime: z.string().min(1, "Incident date/time is required"),
+});
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+app.get("/api/refund-requests/status", (req, res) => {
+  res.json({
+    enabled: true,
+    receiverEmail:
+      process.env.REFUND_REQUEST_RECEIVER_EMAIL || "ramseyvincent128@gmail.com",
+  });
+});
+
+app.post("/api/refund-requests", async (req, res) => {
+  const parsed = refundRequestSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "Invalid refund request payload",
+      details: parsed.error.errors,
+    });
+  }
+
+  const body = parsed.data;
+  const receiverEmail =
+    process.env.REFUND_REQUEST_RECEIVER_EMAIL || "ramseyvincent128@gmail.com";
+
+  try {
+    const emailResponse = await fetch(
+      "https://smtp.vibecodeapp.com/v1/send/email",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: receiverEmail,
+          subject: `Refund Request: ${body.buyerName}`,
+          fromName: "Vibecode Car Wash",
+          html: `
+            <h2>New Refund Request</h2>
+            <p><strong>Buyer Name:</strong> ${escapeHtml(body.buyerName)}</p>
+            <p><strong>Washer Name:</strong> ${escapeHtml(body.washerName)}</p>
+            <p><strong>Incident Date/Time:</strong> ${new Date(body.incidentDateTime).toLocaleString("en-GB")}</p>
+            <h3>Description:</h3>
+            <p>${escapeHtml(body.description).replace(/\n/g, "<br>")}</p>
+            ${body.damageImage ? `<p><strong>Evidence Image:</strong> <a href="${escapeHtml(body.damageImage)}">View Image</a></p>` : ""}
+            <hr>
+            <p>Submitted at: ${new Date().toISOString()}</p>
+          `,
+        }),
+      }
+    );
+
+    if (!emailResponse.ok) {
+      const errorData = await emailResponse.json().catch(() => ({}));
+      console.error("Failed to send refund request email:", errorData);
+      return res
+        .status(500)
+        .json({ error: "Failed to submit refund request. Please try again." });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Refund request submitted successfully. We will review it shortly.",
+      receiverEmail,
+    });
+  } catch (error) {
+    console.error("Refund request error:", error);
+    return res.status(500).json({ error: "Failed to submit refund request" });
+  }
 });
 
 async function sendInvoiceEmail(session) {
