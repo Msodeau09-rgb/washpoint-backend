@@ -162,11 +162,15 @@ app.post("/api/refund-requests", async (req, res) => {
     process.env.REFUND_REQUEST_RECEIVER_EMAIL || "ramseyvincent128@gmail.com";
 
   try {
+    const emailAbortController = new AbortController();
+    const emailTimeout = setTimeout(() => emailAbortController.abort(), 15000);
+
     const emailResponse = await fetch(
       "https://smtp.vibecodeapp.com/v1/send/email",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: emailAbortController.signal,
         body: JSON.stringify({
           to: receiverEmail,
           subject: `Refund Request: ${body.buyerName}`,
@@ -185,14 +189,27 @@ app.post("/api/refund-requests", async (req, res) => {
         }),
       }
     );
+    clearTimeout(emailTimeout);
+
+    const emailResponseBody = await emailResponse.text().catch(() => "");
 
     if (!emailResponse.ok) {
-      const errorData = await emailResponse.json().catch(() => ({}));
-      console.error("Failed to send refund request email:", errorData);
-      return res
-        .status(500)
-        .json({ error: "Failed to submit refund request. Please try again." });
+      console.error("Failed to send refund request email:", {
+        status: emailResponse.status,
+        body: emailResponseBody,
+      });
+      return res.status(502).json({
+        error: "Refund request was received, but email delivery failed.",
+        smtpStatus: emailResponse.status,
+        smtpResponse: emailResponseBody,
+      });
     }
+
+    console.log("Refund request email sent:", {
+      status: emailResponse.status,
+      response: emailResponseBody,
+      receiverEmail,
+    });
 
     return res.status(201).json({
       success: true,
@@ -201,7 +218,13 @@ app.post("/api/refund-requests", async (req, res) => {
     });
   } catch (error) {
     console.error("Refund request error:", error);
-    return res.status(500).json({ error: "Failed to submit refund request" });
+    return res.status(502).json({
+      error: "Refund request was received, but email delivery failed.",
+      details:
+        error.name === "AbortError"
+          ? "SMTP request timed out"
+          : error.message || "Unknown email delivery error",
+    });
   }
 });
 
