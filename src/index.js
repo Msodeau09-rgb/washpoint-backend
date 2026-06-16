@@ -51,10 +51,112 @@ const bookingPaymentIntentSchema = z.object({
   longitude: z.number().optional(),
 });
 
+const subscriptionPaymentSchema = z.object({
+  userId: z.string().min(1, "userId is required"),
+  tier: z.enum(["premium", "standard"]),
+  userType: z.enum(["buyer", "washer"]),
+});
+
+const subscriptionConfirmSchema = z.object({
+  userId: z.string().min(1, "userId is required"),
+  paymentIntentId: z.string().min(1, "paymentIntentId is required"),
+  tier: z.enum(["premium", "standard"]).optional(),
+  userType: z.enum(["buyer", "washer"]).optional(),
+});
+
+const SUBSCRIPTION_PRICES = {
+  "premium-buyer": 1500,
+  "premium-washer": 3000,
+};
+
 function metadataValue(value) {
   if (value === undefined || value === null) return "";
   const text = String(value);
   return text.length > 500 ? "" : text;
+}
+
+function nextSubscriptionRenewalDate() {
+  const nextRenewalDate = new Date();
+  nextRenewalDate.setDate(nextRenewalDate.getDate() + 30);
+  return nextRenewalDate;
+}
+
+async function updatePremiumProfile(userId, userType, nextRenewalDate) {
+  const now = new Date().toISOString();
+  const richPayload = {
+    is_premium: true,
+    is_premium_buyer: userType === "buyer",
+    is_premium_washer: userType === "washer",
+    subscription_tier: "premium",
+    premium_started_at: now,
+    subscription_start_date: now,
+    next_renewal_date: nextRenewalDate.toISOString(),
+  };
+
+  const { error: richError } = await supabase
+    .from("profiles")
+    .update(richPayload)
+    .eq("id", userId);
+
+  if (!richError) return { ok: true, mode: "rich" };
+
+  console.warn("Rich premium profile update failed, retrying legacy fields:", richError);
+
+  const { error: legacyError } = await supabase
+    .from("profiles")
+    .update({
+      is_premium: true,
+      premium_started_at: now,
+    })
+    .eq("id", userId);
+
+  if (legacyError) {
+    return { ok: false, error: legacyError.message };
+  }
+
+  return { ok: true, mode: "legacy" };
+}
+
+async function saveSubscriptionRecord({ userId, tier, userType, paymentIntent, nextRenewalDate }) {
+  const { data: existingSubscription, error: existingError } = await supabase
+    .from("subscriptions")
+    .select("*")
+    .eq("stripe_payment_intent_id", paymentIntent.id)
+    .maybeSingle();
+
+  if (!existingError && existingSubscription) {
+    return { ok: true, subscription: existingSubscription, idempotent: true };
+  }
+
+  if (existingError) {
+    console.warn("Subscription idempotency check failed; table may be missing:", existingError);
+  }
+
+  const { data: subscription, error: insertError } = await supabase
+    .from("subscriptions")
+    .insert({
+      user_id: userId,
+      tier,
+      user_type: userType,
+      status: "active",
+      amount: paymentIntent.amount,
+      currency: paymentIntent.currency || "gbp",
+      stripe_customer_id: typeof paymentIntent.customer === "string" ? paymentIntent.customer : null,
+      stripe_payment_intent_id: paymentIntent.id,
+      stripe_payment_method_id: typeof paymentIntent.payment_method === "string" ? paymentIntent.payment_method : null,
+      start_date: new Date().toISOString(),
+      next_renewal_date: nextRenewalDate.toISOString(),
+      last_charged_date: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (insertError) {
+    console.warn("Subscription record insert failed; continuing with premium profile update:", insertError);
+    return { ok: false, error: insertError.message };
+  }
+
+  return { ok: true, subscription };
 }
 
 function buildBookingMetadata(data) {
@@ -120,7 +222,6 @@ async function createBookingOrderFromPaymentIntent(paymentIntent) {
 
   const paidAt = new Date().toISOString();
   const richOrderPayload = {
-    id: metadata.orderId,
     buyer_id: metadata.buyerId,
     buyer_name: metadata.buyerName || null,
     buyer_phone: metadata.buyerPhone || null,
@@ -162,7 +263,6 @@ async function createBookingOrderFromPaymentIntent(paymentIntent) {
   console.error("PaymentIntent webhook rich order insert failed, retrying legacy columns:", insertError);
 
   const legacyOrderPayload = {
-    id: metadata.orderId,
     status: "paid",
     amount_pence: paymentIntent.amount,
     currency: paymentIntent.currency || "gbp",
@@ -209,6 +309,10 @@ app.post(
    console.log("🔥 WEBHOOK RECEIVED:", event.type);
    if (event.type === "payment_intent.succeeded") {
  const paymentIntent = event.data.object;
+ if (paymentIntent.metadata?.type === "subscription") {
+   console.log("Subscription PaymentIntent succeeded; confirmation endpoint will activate premium:", paymentIntent.id);
+   return res.json({ received: true, subscriptionPayment: true });
+ }
  const result = await createBookingOrderFromPaymentIntent(paymentIntent);
  if (!result.ok) {
    return res.status(400).json(result);
@@ -260,7 +364,7 @@ app.post("/api/stripe/create-payment-intent", async (req, res) => {
     const paymentIntent = await stripe.paymentIntents.create({
       amount: booking.amount_pence,
       currency: "gbp",
-      automatic_payment_methods: { enabled: true },
+      payment_method_types: ["card"],
       metadata: buildBookingMetadata(booking),
     });
 
@@ -1196,22 +1300,134 @@ app.get('/api/orders/my-orders', async (req, res) => {
 
 app.post('/api/subscriptions/create-payment', async (req, res) => {
  try {
-   console.log("CREATE PAYMENT HIT");
-   const session = await stripe.checkout.sessions.create({
-     payment_method_types: ['card'],
-     mode: 'subscription',
-     line_items: [
-       {
-         price: 'price_1TLkIhJI83ux8bzgNBRBhU2F', 
-         quantity: 1,
-       },
-     ],
-     success_url: 'washpoint://payment-success',
-     cancel_url: 'washpoint://payment-cancel',
+   const parsed = subscriptionPaymentSchema.safeParse(req.body);
+   if (!parsed.success) {
+     console.error("Invalid subscription payment payload:", parsed.error.errors);
+     return res.status(400).json({
+       error: "Invalid subscription payment request",
+       details: parsed.error.errors,
+     });
+   }
+
+   const { userId, tier, userType } = parsed.data;
+   if (tier === "standard") {
+     return res.status(400).json({ error: "Standard tier is free" });
+   }
+
+   const amount = SUBSCRIPTION_PRICES[`${tier}-${userType}`];
+   if (!amount) {
+     return res.status(400).json({ error: "Invalid subscription tier or user type" });
+   }
+
+   const paymentIntent = await stripe.paymentIntents.create({
+     amount,
+     currency: "gbp",
+     payment_method_types: ["card"],
+     setup_future_usage: "off_session",
+     metadata: {
+       type: "subscription",
+       userId: metadataValue(userId),
+       tier: metadataValue(tier),
+       userType: metadataValue(userType),
+     },
+     description: `${tier.toUpperCase()} subscription for ${userType}`,
    });
-   res.json({ url: session.url });
+
+   console.log("Subscription PaymentIntent created:", {
+     paymentIntentId: paymentIntent.id,
+     userId,
+     tier,
+     userType,
+     amount,
+   });
+
+   return res.json({
+     clientSecret: paymentIntent.client_secret,
+     paymentIntentId: paymentIntent.id,
+     amount,
+     tier,
+     userType,
+   });
  } catch (err) {
-   console.error("STRIPE ERROR:", err);
+   console.error("Subscription PaymentIntent error:", err);
+   res.status(500).json({ error: err.message });
+ }
+});
+
+app.post('/api/subscriptions/confirm-payment', async (req, res) => {
+ try {
+   const parsed = subscriptionConfirmSchema.safeParse(req.body);
+   if (!parsed.success) {
+     console.error("Invalid subscription confirmation payload:", parsed.error.errors);
+     return res.status(400).json({
+       error: "Invalid subscription confirmation request",
+       details: parsed.error.errors,
+     });
+   }
+
+   const { userId, paymentIntentId } = parsed.data;
+   const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+   if (paymentIntent.status !== "succeeded") {
+     return res.status(400).json({
+       error: `Payment not succeeded. Status: ${paymentIntent.status}`,
+     });
+   }
+
+   const metadata = paymentIntent.metadata || {};
+   if (metadata.type !== "subscription") {
+     return res.status(400).json({ error: "PaymentIntent is not a subscription payment" });
+   }
+
+   if (metadata.userId && metadata.userId !== userId) {
+     return res.status(403).json({ error: "PaymentIntent user mismatch" });
+   }
+
+   const tier = metadata.tier || parsed.data.tier;
+   const userType = metadata.userType || parsed.data.userType;
+
+   if (tier !== "premium" || !["buyer", "washer"].includes(userType)) {
+     return res.status(400).json({ error: "Invalid subscription metadata" });
+   }
+
+   const nextRenewalDate = nextSubscriptionRenewalDate();
+   const subscriptionResult = await saveSubscriptionRecord({
+     userId,
+     tier,
+     userType,
+     paymentIntent,
+     nextRenewalDate,
+   });
+
+   const profileResult = await updatePremiumProfile(userId, userType, nextRenewalDate);
+   if (!profileResult.ok) {
+     console.error("Failed to update premium profile:", profileResult.error);
+     return res.status(500).json({ error: "Failed to activate premium status" });
+   }
+
+   console.log("Subscription activated:", {
+     userId,
+     tier,
+     userType,
+     paymentIntentId,
+     subscriptionRecordSaved: subscriptionResult.ok,
+     profileMode: profileResult.mode,
+   });
+
+   return res.json({
+     success: true,
+     subscription: {
+       id: subscriptionResult.subscription?.id || paymentIntentId,
+       tier,
+       userType,
+       status: "active",
+       nextRenewalDate: nextRenewalDate.toISOString(),
+       paymentIntentId,
+       recordSaved: subscriptionResult.ok,
+     },
+   });
+ } catch (err) {
+   console.error("Subscription confirmation error:", err);
    res.status(500).json({ error: err.message });
  }
 });
