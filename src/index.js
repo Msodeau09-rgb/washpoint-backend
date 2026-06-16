@@ -51,6 +51,17 @@ const bookingPaymentIntentSchema = z.object({
   longitude: z.number().optional(),
 });
 
+const subscriptionPaymentSchema = z.object({
+  userId: z.string().optional(),
+  tier: z.enum(["premium", "standard"]),
+  userType: z.enum(["buyer", "washer"]),
+});
+
+const SUBSCRIPTION_PRICES = {
+  "premium-buyer": 1500,
+  "premium-washer": 3000,
+};
+
 function metadataValue(value) {
   if (value === undefined || value === null) return "";
   const text = String(value);
@@ -1196,22 +1207,57 @@ app.get('/api/orders/my-orders', async (req, res) => {
 
 app.post('/api/subscriptions/create-payment', async (req, res) => {
  try {
-   console.log("CREATE PAYMENT HIT");
-   const session = await stripe.checkout.sessions.create({
-     payment_method_types: ['card'],
-     mode: 'subscription',
-     line_items: [
-       {
-         price: 'price_1TLkIhJI83ux8bzgNBRBhU2F', 
-         quantity: 1,
-       },
-     ],
-     success_url: 'washpoint://payment-success',
-     cancel_url: 'washpoint://payment-cancel',
+   console.log("SUBSCRIPTION CREATE PAYMENT HIT:", req.body);
+
+   const parsed = subscriptionPaymentSchema.safeParse(req.body);
+   if (!parsed.success) {
+     console.error("Invalid subscription payment payload:", parsed.error.errors);
+     return res.status(400).json({
+       error: "Invalid subscription payment request",
+       details: parsed.error.errors,
+     });
+   }
+
+   const { userId, tier, userType } = parsed.data;
+   if (tier === "standard") {
+     return res.status(400).json({ error: "Standard tier is free" });
+   }
+
+   const amount = SUBSCRIPTION_PRICES[`${tier}-${userType}`];
+   if (!amount) {
+     return res.status(400).json({ error: "Invalid subscription tier or user type" });
+   }
+
+   const paymentIntent = await stripe.paymentIntents.create({
+     amount,
+     currency: "gbp",
+     payment_method_types: ["card"],
+     metadata: {
+       type: "subscription",
+       userId: metadataValue(userId),
+       tier: metadataValue(tier),
+       userType: metadataValue(userType),
+     },
+     description: `${tier.toUpperCase()} subscription for ${userType}`,
    });
-   res.json({ url: session.url });
+
+   console.log("Subscription PaymentIntent created:", {
+     paymentIntentId: paymentIntent.id,
+     userId,
+     tier,
+     userType,
+     amount,
+   });
+
+   return res.json({
+     clientSecret: paymentIntent.client_secret,
+     paymentIntentId: paymentIntent.id,
+     amount,
+     tier,
+     userType,
+   });
  } catch (err) {
-   console.error("STRIPE ERROR:", err);
+   console.error("SUBSCRIPTION PAYMENTINTENT ERROR:", err);
    res.status(500).json({ error: err.message });
  }
 });
