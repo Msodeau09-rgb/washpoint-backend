@@ -30,6 +30,166 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 
+const bookingPaymentIntentSchema = z.object({
+  orderId: z.string().min(1, "orderId is required"),
+  buyerId: z.string().min(1, "buyerId is required"),
+  buyerName: z.string().optional(),
+  buyerPhone: z.string().optional(),
+  buyerProfileImage: z.string().optional(),
+  sellerId: z.string().optional(),
+  carImage: z.string().optional(),
+  address: z.string().min(1, "address is required"),
+  carType: z.string().min(1, "carType is required"),
+  carMake: z.string().optional(),
+  washPackage: z.string().min(1, "washPackage is required"),
+  price: z.number().positive("price must be positive"),
+  amount_pence: z.number().int().positive("amount_pence must be positive"),
+  scheduledDate: z.string().optional(),
+  scheduledTime: z.string().optional(),
+  agePreference: z.string().optional(),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
+});
+
+function metadataValue(value) {
+  if (value === undefined || value === null) return "";
+  const text = String(value);
+  return text.length > 500 ? "" : text;
+}
+
+function buildBookingMetadata(data) {
+  return {
+    orderId: metadataValue(data.orderId),
+    buyerId: metadataValue(data.buyerId),
+    buyerName: metadataValue(data.buyerName),
+    buyerPhone: metadataValue(data.buyerPhone),
+    buyerProfileImage: metadataValue(data.buyerProfileImage),
+    sellerId: metadataValue(data.sellerId),
+    carImage: metadataValue(data.carImage),
+    address: metadataValue(data.address),
+    carType: metadataValue(data.carType),
+    carMake: metadataValue(data.carMake),
+    washPackage: metadataValue(data.washPackage),
+    price: metadataValue(data.price),
+    scheduledDate: metadataValue(data.scheduledDate),
+    scheduledTime: metadataValue(data.scheduledTime),
+    agePreference: metadataValue(data.agePreference || "any"),
+    latitude: metadataValue(data.latitude),
+    longitude: metadataValue(data.longitude),
+  };
+}
+
+async function createBookingOrderFromPaymentIntent(paymentIntent) {
+  const metadata = paymentIntent.metadata || {};
+  const price = Number.parseFloat(metadata.price || "");
+  const missing = [
+    !metadata.orderId ? "orderId" : null,
+    !metadata.buyerId ? "buyerId" : null,
+    !metadata.address ? "address" : null,
+    !metadata.carType ? "carType" : null,
+    !metadata.washPackage ? "washPackage" : null,
+    !Number.isFinite(price) || price <= 0 ? "price" : null,
+  ].filter(Boolean);
+
+  if (missing.length > 0) {
+    console.error("PaymentIntent webhook missing booking metadata:", {
+      paymentIntentId: paymentIntent.id,
+      missing,
+    });
+    return { ok: false, error: "Missing booking metadata", missing };
+  }
+
+  const { data: existingOrder, error: existingError } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("stripe_payment_intent_id", paymentIntent.id)
+    .maybeSingle();
+
+  if (existingError) {
+    console.error("PaymentIntent webhook idempotency check failed:", existingError);
+    return { ok: false, error: existingError.message };
+  }
+
+  if (existingOrder) {
+    console.log("PaymentIntent webhook idempotent order already exists:", {
+      orderId: existingOrder.id,
+      paymentIntentId: paymentIntent.id,
+    });
+    return { ok: true, order: existingOrder, idempotent: true };
+  }
+
+  const paidAt = new Date().toISOString();
+  const richOrderPayload = {
+    id: metadata.orderId,
+    buyer_id: metadata.buyerId,
+    buyer_name: metadata.buyerName || null,
+    buyer_phone: metadata.buyerPhone || null,
+    buyer_profile_image: metadata.buyerProfileImage || null,
+    seller_id: metadata.sellerId || null,
+    address: metadata.address,
+    latitude: metadata.latitude ? Number.parseFloat(metadata.latitude) : null,
+    longitude: metadata.longitude ? Number.parseFloat(metadata.longitude) : null,
+    car_type: metadata.carType,
+    car_make: metadata.carMake || null,
+    wash_package: metadata.washPackage,
+    price,
+    amount_pence: paymentIntent.amount,
+    currency: paymentIntent.currency || "gbp",
+    scheduled_date: metadata.scheduledDate || null,
+    scheduled_time: metadata.scheduledTime || null,
+    car_image: metadata.carImage || null,
+    age_preference: metadata.agePreference || "any",
+    status: "pending",
+    payment_status: "succeeded",
+    stripe_payment_intent_id: paymentIntent.id,
+    paid_at: paidAt,
+  };
+
+  const { data: newOrder, error: insertError } = await supabase
+    .from("orders")
+    .insert(richOrderPayload)
+    .select()
+    .single();
+
+  if (!insertError) {
+    console.log("PaymentIntent webhook created booking order:", {
+      orderId: newOrder.id,
+      paymentIntentId: paymentIntent.id,
+    });
+    return { ok: true, order: newOrder };
+  }
+
+  console.error("PaymentIntent webhook rich order insert failed, retrying legacy columns:", insertError);
+
+  const legacyOrderPayload = {
+    id: metadata.orderId,
+    status: "paid",
+    amount_pence: paymentIntent.amount,
+    currency: paymentIntent.currency || "gbp",
+    seller_id: metadata.sellerId || null,
+    buyer_name: metadata.buyerName || null,
+    stripe_payment_intent_id: paymentIntent.id,
+    paid_at: paidAt,
+  };
+
+  const { data: legacyOrder, error: legacyError } = await supabase
+    .from("orders")
+    .insert(legacyOrderPayload)
+    .select()
+    .single();
+
+  if (legacyError) {
+    console.error("PaymentIntent webhook legacy order insert failed:", legacyError);
+    return { ok: false, error: legacyError.message };
+  }
+
+  console.log("PaymentIntent webhook created legacy booking order:", {
+    orderId: legacyOrder.id,
+    paymentIntentId: paymentIntent.id,
+  });
+  return { ok: true, order: legacyOrder, legacy: true };
+}
+
 app.post(
  "/webhook",
  express.raw({ type: "application/json" }),
@@ -47,6 +207,14 @@ app.post(
      return res.status(400).send(`Webhook Error: ${err.message}`);
    }
    console.log("🔥 WEBHOOK RECEIVED:", event.type);
+   if (event.type === "payment_intent.succeeded") {
+ const paymentIntent = event.data.object;
+ const result = await createBookingOrderFromPaymentIntent(paymentIntent);
+ if (!result.ok) {
+   return res.status(400).json(result);
+ }
+ return res.json({ received: true, orderCreated: true });
+}
    if (event.type === "checkout.session.completed") {
  const session = event.data.object;
  const orderId = session.metadata?.orderId;
@@ -75,6 +243,47 @@ app.post(
 app.use(cors());
 app.use(express.json());
 
+app.post("/api/stripe/create-payment-intent", async (req, res) => {
+  const parsed = bookingPaymentIntentSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    console.error("Invalid create-payment-intent payload:", parsed.error.errors);
+    return res.status(400).json({
+      error: "Invalid payment request",
+      details: parsed.error.errors,
+    });
+  }
+
+  const booking = parsed.data;
+
+  try {
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: booking.amount_pence,
+      currency: "gbp",
+      automatic_payment_methods: { enabled: true },
+      metadata: buildBookingMetadata(booking),
+    });
+
+    console.log("Created booking PaymentIntent:", {
+      paymentIntentId: paymentIntent.id,
+      orderId: booking.orderId,
+      buyerId: booking.buyerId,
+      amount: paymentIntent.amount,
+    });
+
+    return res.status(200).json({
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+      amount: paymentIntent.amount,
+    });
+  } catch (error) {
+    console.error("Create booking PaymentIntent failed:", error);
+    return res.status(500).json({
+      error: "Failed to create payment intent",
+      details: error.message,
+    });
+  }
+});
 
 app.post("/api/auth/sign-in/email", async (req, res) => {
   try {
