@@ -1280,14 +1280,64 @@ app.post("/api/orders", async (req, res) => {
 
 app.get('/api/orders/my-orders', async (req, res) => {
  try {
+   const userId = req.query.userId;
+
+   if (!userId) {
+     return res.status(400).json({ error: 'userId is required' });
+   }
+
    const { data, error } = await supabase
      .from('orders')
-     .select('*');
+     .select('*')
+     .eq('buyer_id', userId)
+     .not('stripe_payment_intent_id', 'is', null)
+     .order('created_at', { ascending: false });
+
    if (error) {
      console.error(error);
      return res.status(500).json({ error: 'Failed to fetch orders' });
    }
-   return res.json(data);
+
+   const normalizedOrders = (data || []).map((order) => ({
+     id: order.id,
+     buyerId: order.buyer_id,
+     buyerName: order.buyer_name || 'Customer',
+     buyerPhone: order.buyer_phone || '',
+     buyerProfileImage: order.buyer_profile_image || undefined,
+     sellerId: order.seller_id || undefined,
+     sellerName: order.seller_name || undefined,
+     address: order.address || '',
+     location: {
+       lat: Number(order.latitude || 0),
+       lng: Number(order.longitude || 0),
+     },
+     carType: order.car_type || 'sedan',
+     carMake: order.car_make || undefined,
+     washPackage: order.wash_package || 'basic',
+     status: order.status === 'pending' && order.payment_status === 'succeeded' ? 'paid' : order.status,
+     price: typeof order.price === 'number' ? order.price : Number(order.price || 0),
+     createdAt: order.created_at || new Date().toISOString(),
+     acceptedAt: order.accepted_at || undefined,
+     completedAt: order.completed_at || undefined,
+     cancelledAt: order.cancelled_at || undefined,
+     cancellationReason: order.cancellation_reason || undefined,
+     paymentIntentId: order.stripe_payment_intent_id || undefined,
+     paymentStatus: order.payment_status || (order.stripe_payment_intent_id ? 'succeeded' : 'pending'),
+     paidAt: order.paid_at || undefined,
+     scheduledDate: order.scheduled_date || undefined,
+     scheduledTime: order.scheduled_time || undefined,
+     carImage: order.car_image || undefined,
+     agePreference: order.age_preference || 'any',
+     expiresAt: order.expires_at || order.created_at || new Date().toISOString(),
+     refundStatus: order.refund_status || undefined,
+   }));
+
+   console.log('[ORDERS] Returning paid buyer orders:', {
+     userId,
+     count: normalizedOrders.length,
+   });
+
+   return res.json(normalizedOrders);
  } catch (err) {
    console.error('SERVER ERROR:', err);
    return res.status(500).json({ error: 'Server crash' });
