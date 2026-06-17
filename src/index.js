@@ -1054,6 +1054,95 @@ app.post("/admin/cancel", authenticateUser, checkAdmin, async (req, res) => {
 });
 // ⭐ AUTO PAYOUT SYSTEM (runs every 5 minutes)
 
+app.post("/api/refund-requests/:id/approve", async (req, res) => {
+  const refundId = req.params.id;
+  console.log("[REFUND_REQUEST] Approve requested:", refundId);
+
+  try {
+    const { data: refundRequest, error: refundError } = await supabase
+      .from("refund_requests")
+      .select("*")
+      .eq("id", refundId)
+      .single();
+
+    if (refundError || !refundRequest) {
+      console.error("[REFUND_REQUEST] Refund request not found:", refundError?.message);
+      return res.status(404).json({ error: "Refund request not found" });
+    }
+
+    if (refundRequest.status === "refunded") {
+      return res.status(400).json({ error: "This refund has already been processed" });
+    }
+
+    if (!refundRequest.order_id) {
+      return res.status(400).json({
+        error: "Cannot process Stripe refund: refund request is not linked to an order",
+      });
+    }
+
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", refundRequest.order_id)
+      .single();
+
+    if (orderError || !order) {
+      console.error("[REFUND_REQUEST] Linked order not found:", orderError?.message);
+      return res.status(404).json({ error: "Linked order not found" });
+    }
+
+    if (!order.stripe_payment_intent_id) {
+      return res.status(400).json({
+        error: "Linked order has no Stripe payment intent",
+      });
+    }
+
+    console.log("[REFUND_REQUEST] Creating Stripe refund:", {
+      refundId,
+      orderId: order.id,
+      paymentIntentId: order.stripe_payment_intent_id,
+    });
+
+    const stripeRefund = await stripe.refunds.create({
+      payment_intent: order.stripe_payment_intent_id,
+      reason: "requested_by_customer",
+    });
+
+    const { error: refundUpdateError } = await supabase
+      .from("refund_requests")
+      .update({ status: "refunded" })
+      .eq("id", refundId);
+
+    if (refundUpdateError) {
+      console.error("[REFUND_REQUEST] Stripe refund created but status update failed:", refundUpdateError.message);
+    }
+
+    const { error: orderUpdateError } = await supabase
+      .from("orders")
+      .update({ status: "refunded" })
+      .eq("id", order.id);
+
+    if (orderUpdateError) {
+      console.error("[REFUND_REQUEST] Stripe refund created but order update failed:", orderUpdateError.message);
+    }
+
+    return res.json({
+      success: true,
+      message: "Refund processed successfully",
+      refundId,
+      stripeRefundId: stripeRefund.id,
+      orderId: order.id,
+      amount: stripeRefund.amount,
+      status: stripeRefund.status,
+    });
+  } catch (error) {
+    console.error("[REFUND_REQUEST] Approve failed:", error);
+    return res.status(500).json({
+      error: error.message || "Failed to process refund",
+    });
+  }
+});
+
 setInterval(async () => {
 
   console.log("Checking orders for auto release...");
