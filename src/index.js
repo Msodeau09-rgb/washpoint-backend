@@ -1401,6 +1401,66 @@ app.post('/api/subscriptions/create-payment', async (req, res) => {
  }
 });
 
+app.post('/api/subscriptions/confirm-payment', async (req, res) => {
+ try {
+   console.log("SUBSCRIPTION CONFIRM PAYMENT HIT:", req.body);
+
+   const { paymentIntentId } = req.body;
+   if (!paymentIntentId) {
+     return res.status(400).json({ error: "paymentIntentId is required" });
+   }
+
+   const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+   if (paymentIntent.status !== "succeeded") {
+     return res.status(400).json({
+       error: `Payment not succeeded. Status: ${paymentIntent.status}`,
+     });
+   }
+
+   const { userId, tier, userType } = paymentIntent.metadata || {};
+   if (!userId || !tier || !userType) {
+     return res.status(400).json({ error: "Invalid subscription payment metadata" });
+   }
+
+   const nextRenewalDate = new Date();
+   nextRenewalDate.setDate(nextRenewalDate.getDate() + 30);
+
+   const { error } = await supabase
+     .from("profiles")
+     .update({
+       is_premium: true,
+       premium_started_at: new Date().toISOString(),
+     })
+     .eq("id", userId);
+
+   if (error) {
+     console.error("Subscription premium update failed:", error);
+     return res.status(500).json({ error: "Failed to activate subscription" });
+   }
+
+   console.log("Subscription confirmed:", {
+     paymentIntentId,
+     userId,
+     tier,
+     userType,
+   });
+
+   return res.json({
+     success: true,
+     subscription: {
+       id: paymentIntentId,
+       tier,
+       userType,
+       status: "active",
+       nextRenewalDate: nextRenewalDate.toISOString(),
+     },
+   });
+ } catch (err) {
+   console.error("SUBSCRIPTION CONFIRM ERROR:", err);
+   return res.status(500).json({ error: err.message || "Failed to confirm subscription" });
+ }
+});
+
 app.post('/api/buyer-subscription', async (req, res) => {
  try {
    console.log("BUYER SUB HIT");
